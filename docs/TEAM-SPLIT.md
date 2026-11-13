@@ -1,6 +1,6 @@
 # Team split — Day 1–5 (→ Fri Nov 20, 12:00 PM CST)
 
-Serious engineering squad shipping a production-minded hackathon prototype. Clear RACI, parallel streams, daily DoD.
+Three working engineers with complementary specialties shipping a production-minded prototype. Clear RACI, parallel streams, daily DoD.
 
 ## Roster
 

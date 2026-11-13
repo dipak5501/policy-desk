@@ -573,9 +573,10 @@ function DeskInner() {
 
       <footer className="footer">
         <p>
-          Built during UBC Hackathon 2026 by Dipak Yadav, Utkarsh Lubal, and
-          Kashif Manzer. Solana Devnet USDC · Phantom · x402 · optional QuickNode
-          Streams.
+          Built during UBC Hackathon 2026 by Dipak Yadav (full-stack /
+          product lead), Utkarsh Lubal (cybersecurity engineer), and Kashif
+          Manzer (blockchain engineer). Solana Devnet USDC · Phantom · x402 ·
+          optional QuickNode Streams.
         </p>
       </footer>
     </div>

@@ -63,6 +63,8 @@ Everything else is support for this path. Do not fork the demo into a second pro
 
 ## Engineering team (RACI)
 
+Professionals by discipline — full-stack, cybersecurity, and blockchain — with explicit ownership (no invented employers, years, or certs).
+
 | Person | Role | Owns |
 |---|---|---|
 | **Dipak Yadav** ([@dipak5501](https://github.com/dipak5501)) | Full-stack developer · product/engineering lead | Desk UX, API routes, demo script, Devpost, integration glue |
