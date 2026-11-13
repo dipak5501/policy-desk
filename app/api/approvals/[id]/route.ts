@@ -7,14 +7,15 @@ import {
 } from "@/lib/ledger/store";
 import { assertOperator } from "@/lib/security/operator";
 import { appendAudit } from "@/lib/security/audit";
+import { POLICY_VERSION } from "@/lib/policy/version";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type Body = {
   action?: "approve" | "reject" | "cancel";
-  /** Client must echo intentHash so approval cannot apply to a mutated intent. */
   intentHash?: string;
+  policyVersion?: string;
 };
 
 export async function POST(
@@ -24,7 +25,10 @@ export async function POST(
   try {
     if (!assertOperator(request)) {
       return NextResponse.json(
-        { error: "Operator token required (x-operator-token)" },
+        {
+          error:
+            "Operator session required (login via /api/operator/login). Public tokens are not accepted.",
+        },
         { status: 401 },
       );
     }
@@ -43,6 +47,30 @@ export async function POST(
       );
     }
 
+    if (!entry.fromOwner) {
+      return NextResponse.json(
+        { error: "Payment intent must bind a wallet before approval" },
+        { status: 400 },
+      );
+    }
+
+    if (
+      entry.policyVersion &&
+      body.policyVersion &&
+      body.policyVersion !== entry.policyVersion
+    ) {
+      return NextResponse.json(
+        { error: "policyVersion mismatch" },
+        { status: 409 },
+      );
+    }
+    if (entry.policyVersion && entry.policyVersion !== POLICY_VERSION) {
+      return NextResponse.json(
+        { error: "Intent policy version is no longer active" },
+        { status: 409 },
+      );
+    }
+
     if (
       entry.approvalExpiresAt &&
       Date.parse(entry.approvalExpiresAt) < Date.now()
@@ -58,7 +86,11 @@ export async function POST(
       );
     }
 
-    if (body.intentHash && entry.intentHash && body.intentHash !== entry.intentHash) {
+    if (
+      body.intentHash &&
+      entry.intentHash &&
+      body.intentHash !== entry.intentHash
+    ) {
       return NextResponse.json(
         { error: "intentHash mismatch — approval does not bind to this intent" },
         { status: 409 },
@@ -77,6 +109,7 @@ export async function POST(
         entryId: id,
         approvalId,
         intentHash: entry.intentHash,
+        policyVersion: entry.policyVersion,
       });
       if (entry.taskId) syncTaskBudgetFromLedger(entry.taskId);
       return NextResponse.json({ entry: approved, next: "settle", approvalId });

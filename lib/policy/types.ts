@@ -7,6 +7,8 @@ export type SpendRequest = {
   amountBaseUnits: bigint;
   mint: string;
   domain?: string;
+  /** Server/catalog trusted origin for relative merchant paths. */
+  trustedOrigin?: string;
 };
 
 export type PolicyDecision =
@@ -17,11 +19,13 @@ export type PolicyDecision =
 export type PolicyCode =
   | "over_per_tx_cap"
   | "over_daily_cap"
+  | "over_task_budget"
   | "not_allowlisted"
   | "wrong_mint"
   | "paused"
   | "invalid_amount"
-  | "domain_blocked";
+  | "domain_blocked"
+  | "unknown_resource";
 
 export type PolicyConfig = {
   perTxCapBaseUnits: bigint;

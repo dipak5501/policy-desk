@@ -107,15 +107,17 @@ cat .tunnel-url
 
 ## Demo script (~60–90s)
 
-1. Open Policy Desk → Connect Phantom (Devnet) → budget strip (available / reserved / confirmed).
-2. Point at **Fixture mode** banner (honest labeling).
-3. **Run research demo** (or step manually):
-   - Start task with USDC budget → inspect catalog preview.
-   - Request blocked merchant → visible rejection reasons → recover.
-   - Request approved weather brief → simulate → Phantom sign → settle to team-operated merchant.
-   - Answer cites purchased content → structured receipt (task, intent, sig, digests).
-4. Optional: show above-threshold path with approval card.
+1. Open Policy Desk → Connect Phantom (Devnet) → sign wallet login challenge (session cookie).
+2. Operator login (server password → HttpOnly session) for above-threshold approvals.
+3. Point at **Fixture mode** banner (honest labeling).
+4. **Run research demo**:
+   - Task budget $1.00 → inspect catalog.
+   - Prohibited merchant blocked (no reservation) → recover.
+   - Approved alternative above threshold → operator approve → simulate → Phantom sign → confirm.
+   - Sample content delivered for that intent only → answer + structured receipt.
 5. One-liner: “Agents get a budget — not a blank check.”
+
+**Limits:** single-process ledger mutex (not multi-worker); local x402 is a ledger-gated demo merchant; Streams ticker ≠ bounty reconcile; weather body is labeled sample content.
 
 ## Threat model
 

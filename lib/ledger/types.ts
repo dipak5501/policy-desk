@@ -54,6 +54,12 @@ export type LedgerEntry = {
   contentDigest?: string;
   deliveredResource?: string;
   reservationReleased?: boolean;
+  deliveryStatus?: "pending" | "delivered" | "failed";
+  productId?: string;
+  preparedTxBase64?: string;
+  preparedBlockhash?: string;
+  preparedLastValidBlockHeight?: number;
+  preparedToOwner?: string;
 };
 
 export type CreateLedgerInput = {
@@ -71,6 +77,7 @@ export type CreateLedgerInput = {
   quoteExpiresAt?: string;
   quoteId?: string;
   fromOwner?: string;
+  productId?: string;
 };
 
 export type BudgetSnapshot = {
@@ -114,7 +121,9 @@ export type ResearchTask = {
     | "awaiting_signature"
     | "completed"
     | "failed";
-  mode: "fixture";
+  mode: "fixture" | "live";
+  /** Authenticated wallet that owns this task. */
+  ownerWallet?: string;
   timeline: TimelineEvent[];
   answer?: string;
   lastEntryId?: string;
@@ -133,6 +142,7 @@ export const IMMUTABLE_INTENT_FIELDS = [
   "network",
   "policyVersion",
   "quoteId",
+  "productId",
 ] as const;
 
 /** Visible state machine for the desk UI. */

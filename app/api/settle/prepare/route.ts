@@ -6,6 +6,7 @@ import {
   setLedgerStatus,
 } from "@/lib/ledger/store";
 import { getActivePolicy } from "@/lib/policy/active";
+import { getCatalogResource } from "@/lib/catalog/resources";
 import { isSettledDestinationAllowed } from "@/lib/policy/destination";
 import {
   reviewSpend,
@@ -13,7 +14,8 @@ import {
   SPL_TRANSFER_RESOURCE,
 } from "@/lib/policy/review";
 import { appendAudit } from "@/lib/security/audit";
-import { assertDevnetOnly } from "@/lib/solana/connection";
+import { assertCsrf, readWalletSession } from "@/lib/security/session";
+import { assertDevnetOnly, getConnection } from "@/lib/solana/connection";
 import { explainSolanaError } from "@/lib/solana/errors";
 import {
   buildUsdcTransfer,
@@ -25,7 +27,6 @@ import {
   selectExactUsdcRequirement,
 } from "@/lib/x402/client";
 import { requirementAmount } from "@/lib/x402/types";
-import { PublicKey } from "@solana/web3.js";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,25 +34,25 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   try {
     assertDevnetOnly();
+    const wallet = readWalletSession(request);
+    if (!wallet) {
+      return NextResponse.json(
+        { error: "Wallet session required" },
+        { status: 401 },
+      );
+    }
+    if (!assertCsrf(request)) {
+      return NextResponse.json({ error: "CSRF validation failed" }, { status: 403 });
+    }
+
     const body = (await request.json()) as {
       entryId?: string;
-      fromOwner?: string;
       selfPay?: boolean;
       dryRun?: boolean;
     };
-    if (!body.entryId || !body.fromOwner) {
+    if (!body.entryId) {
       return NextResponse.json(
-        { error: "entryId and fromOwner are required" },
-        { status: 400 },
-      );
-    }
-
-    try {
-      // eslint-disable-next-line no-new
-      new PublicKey(body.fromOwner);
-    } catch {
-      return NextResponse.json(
-        { error: "fromOwner is not a valid Solana public key" },
+        { error: "entryId is required" },
         { status: 400 },
       );
     }
@@ -60,6 +61,14 @@ export async function POST(request: Request) {
     if (!entry) {
       return NextResponse.json({ error: "Entry not found" }, { status: 404 });
     }
+
+    if (entry.fromOwner && entry.fromOwner !== wallet) {
+      return NextResponse.json(
+        { error: "Wallet session does not own this payment intent" },
+        { status: 403 },
+      );
+    }
+
     if (entry.status === "settled") {
       return NextResponse.json(
         {
@@ -71,13 +80,11 @@ export async function POST(request: Request) {
       );
     }
     if (entry.status === "confirming") {
-      // Uncertain settlement: do not create a replacement until reconciled
       return NextResponse.json(
         {
-          error:
-            entry.signature
-              ? "Entry has an in-flight signature — reconcile via confirm before re-preparing"
-              : "Entry is already confirming on-chain",
+          error: entry.signature
+            ? "Entry has an in-flight signature — reconcile via confirm before re-preparing"
+            : "Entry is already confirming on-chain",
           entry,
           signature: entry.signature,
         },
@@ -111,31 +118,43 @@ export async function POST(request: Request) {
       );
     }
 
-    if (entry.fromOwner && entry.fromOwner !== body.fromOwner) {
-      return NextResponse.json(
-        {
-          error:
-            "fromOwner does not match the wallet bound to this payment intent",
-        },
-        { status: 403 },
-      );
+    // Bind wallet once
+    if (!entry.fromOwner) {
+      setLedgerStatus(entry.id, entry.status, { fromOwner: wallet });
     }
 
     const base = getActivePolicy();
     const config =
       body.selfPay || entry.resource === SPL_TRANSFER_RESOURCE
-        ? withSessionPayee(base, body.fromOwner)
+        ? withSessionPayee(base, wallet)
         : base;
 
     const payee =
       body.selfPay || entry.resource === SPL_TRANSFER_RESOURCE
-        ? body.fromOwner
+        ? wallet
         : entry.payee;
+
+    // Catalog binding: client cannot change merchant economics
+    if (entry.resourceId) {
+      const catalog = getCatalogResource(entry.resourceId);
+      if (
+        catalog &&
+        !catalog.adversarialFixture &&
+        (catalog.payee !== entry.payee ||
+          catalog.amountBaseUnits !== entry.amountBaseUnits ||
+          catalog.mint !== entry.mint)
+      ) {
+        return NextResponse.json(
+          { error: "Intent diverged from server catalog binding" },
+          { status: 409 },
+        );
+      }
+    }
 
     if (
       !isSettledDestinationAllowed({
         payee,
-        fromOwner: body.fromOwner,
+        fromOwner: wallet,
         resource: body.selfPay ? SPL_TRANSFER_RESOURCE : entry.resource,
         config,
       })
@@ -154,9 +173,13 @@ export async function POST(request: Request) {
         payee,
         amountBaseUnits: BigInt(entry.amountBaseUnits),
         mint: entry.mint,
+        trustedOrigin: entry.resourceId
+          ? getCatalogResource(entry.resourceId)?.trustedOrigin
+          : undefined,
       },
       config,
-      dailySpentBaseUnits(),
+      // Exclude this intent so recheck does not double-count its reservation
+      dailySpentBaseUnits(entry.id),
     );
 
     if (decision.status === "block") {
@@ -182,12 +205,15 @@ export async function POST(request: Request) {
     let toOwner = payee;
 
     if (entry.settlementKind === "x402" && !body.selfPay) {
-      const origin = new URL(request.url).origin;
+      const catalog = entry.resourceId
+        ? getCatalogResource(entry.resourceId)
+        : undefined;
+      const origin =
+        catalog?.trustedOrigin ?? new URL(request.url).origin;
       const challenge = await fetchPaymentChallenge(entry.resource, origin);
       const req = selectExactUsdcRequirement(challenge, entry.amountBaseUnits);
       amount = BigInt(requirementAmount(req));
       toOwner = req.payTo;
-      // Bind quote to immutable intent — reject drift
       if (amount !== BigInt(entry.amountBaseUnits)) {
         return NextResponse.json(
           {
@@ -207,7 +233,7 @@ export async function POST(request: Request) {
     }
 
     const built = await buildUsdcTransfer({
-      fromOwner: body.fromOwner,
+      fromOwner: wallet,
       toOwner,
       amountBaseUnits: amount,
       mint: entry.mint,
@@ -216,14 +242,20 @@ export async function POST(request: Request) {
     const simulation = await simulateTransfer(built.transaction);
     const prepareId = randomUUID();
     const expires = new Date(Date.now() + 2 * 60 * 1000).toISOString();
+    const connection = getConnection();
+    const latest = await connection.getLatestBlockhash("confirmed");
 
     const updated = setLedgerStatus(entry.id, "ready_to_sign", {
-      fromOwner: body.fromOwner,
+      fromOwner: wallet,
       prepareId,
       prepareExpiresAt: expires,
       simulateOk: simulation.ok,
       feeLamportsEstimate: String(simulation.feeLamportsEstimate),
       error: simulation.ok ? undefined : simulation.error,
+      preparedTxBase64: serializeTransactionBase64(built.transaction),
+      preparedBlockhash: built.transaction.recentBlockhash ?? latest.blockhash,
+      preparedLastValidBlockHeight: latest.lastValidBlockHeight,
+      preparedToOwner: toOwner,
     });
 
     appendAudit("settle.prepare", {

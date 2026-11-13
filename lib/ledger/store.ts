@@ -185,7 +185,9 @@ export function createLedgerEntry(input: CreateLedgerInput): LedgerEntry {
     quoteExpiresAt: input.quoteExpiresAt,
     quoteId: input.quoteId,
     fromOwner: input.fromOwner,
+    productId: input.productId,
     reservationReleased: false,
+    deliveryStatus: "pending",
   };
   state().entries.set(entry.id, entry);
   persist();
@@ -216,6 +218,15 @@ export function updateLedgerEntry(
     }
   }
 
+  // fromOwner may be bound once (wallet session); never reassigned
+  if (
+    patch.fromOwner !== undefined &&
+    existing.fromOwner &&
+    patch.fromOwner !== existing.fromOwner
+  ) {
+    throw new Error("Cannot rebind fromOwner on payment intent");
+  }
+
   const next: LedgerEntry = {
     ...existing,
     ...patch,
@@ -223,6 +234,7 @@ export function updateLedgerEntry(
     createdAt: existing.createdAt,
     updatedAt: nowIso(),
     intentHash: existing.intentHash,
+    fromOwner: existing.fromOwner ?? patch.fromOwner,
   };
   state().entries.set(id, next);
   persist();
@@ -259,10 +271,14 @@ export function setLedgerStatus(
 }
 
 /** Amounts held against daily/task caps (not released). */
-export function reservedBaseUnits(taskId?: string): bigint {
+export function reservedBaseUnits(
+  taskId?: string,
+  excludeEntryId?: string,
+): bigint {
   ensureLoaded();
   let total = 0n;
   for (const e of state().entries.values()) {
+    if (excludeEntryId && e.id === excludeEntryId) continue;
     if (taskId && e.taskId !== taskId) continue;
     if (e.reservationReleased) continue;
     if (RESERVED_STATUSES.includes(e.status)) {
@@ -272,10 +288,14 @@ export function reservedBaseUnits(taskId?: string): bigint {
   return total;
 }
 
-export function confirmedBaseUnits(taskId?: string): bigint {
+export function confirmedBaseUnits(
+  taskId?: string,
+  excludeEntryId?: string,
+): bigint {
   ensureLoaded();
   let total = 0n;
   for (const e of state().entries.values()) {
+    if (excludeEntryId && e.id === excludeEntryId) continue;
     if (taskId && e.taskId !== taskId) continue;
     if (CONFIRMED_STATUSES.includes(e.status)) {
       total += BigInt(e.amountBaseUnits);
@@ -284,9 +304,22 @@ export function confirmedBaseUnits(taskId?: string): bigint {
   return total;
 }
 
-/** Pending + settled count against daily cap (honest reservation). */
-export function dailySpentBaseUnits(): bigint {
-  return reservedBaseUnits() + confirmedBaseUnits();
+/**
+ * Pending + settled against daily cap.
+ * When rechecking an existing intent, pass excludeEntryId so its reservation
+ * is not double-counted.
+ *
+ * Deployment: single Node process with in-process mutex (withLedgerLock).
+ * Not safe across multiple server workers — use one process or external DB locks.
+ *
+ * Daily boundary: rolling 24h is NOT implemented; “daily” = process/ledger lifetime
+ * until `.data/ledger.json` reset. Unresolved (confirming) stays reserved.
+ */
+export function dailySpentBaseUnits(excludeEntryId?: string): bigint {
+  return (
+    reservedBaseUnits(undefined, excludeEntryId) +
+    confirmedBaseUnits(undefined, excludeEntryId)
+  );
 }
 
 export function budgetSnapshot(dailyCapBaseUnits: bigint): BudgetSnapshot {
@@ -319,9 +352,12 @@ export function tryReserveAgainstDailyCap(
 export function createTask(input: {
   prompt: string;
   budgetBaseUnits: string;
+  ownerWallet?: string;
+  mode?: "fixture" | "live";
 }): ResearchTask {
   ensureLoaded();
   const ts = nowIso();
+  const mode = input.mode ?? "fixture";
   const task: ResearchTask = {
     id: randomUUID(),
     createdAt: ts,
@@ -331,13 +367,14 @@ export function createTask(input: {
     reservedBaseUnits: "0",
     spentBaseUnits: "0",
     status: "running",
-    mode: "fixture",
+    mode,
+    ownerWallet: input.ownerWallet,
     timeline: [
       {
         id: randomUUID(),
         ts,
         kind: "task.started",
-        message: `Task started with budget ${input.budgetBaseUnits} base units (fixture mode).`,
+        message: `Task started with budget ${input.budgetBaseUnits} base units (${mode} mode).`,
       },
     ],
   };

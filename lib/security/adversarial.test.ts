@@ -25,7 +25,7 @@ const config: PolicyConfig = {
   approvalThresholdBaseUnits: 500_000n,
   allowlistedPayees: ["AxYkHSSywB5pxa4GCwnmwp8ArnR8z8EoqQu2RsbAFpMr"],
   allowlistedResources: ["/api/x402/weather", "spl:transfer"],
-  allowlistedDomains: ["localhost"],
+  allowlistedDomains: ["localhost", "127.0.0.1"],
   allowedMint: DEVNET_USDC_MINT,
   paused: false,
 };
@@ -112,6 +112,7 @@ describe("adversarial controls", () => {
         payee: "AxYkHSSywB5pxa4GCwnmwp8ArnR8z8EoqQu2RsbAFpMr",
         amountBaseUnits: 600_000n,
         mint: DEVNET_USDC_MINT,
+        trustedOrigin: "http://127.0.0.1:3000",
       },
       config,
       dailySpentBaseUnits(),
@@ -176,6 +177,7 @@ describe("adversarial controls", () => {
   });
 
   it("does not deliver paid content before settlement", () => {
+    const wallet = "AxYkHSSywB5pxa4GCwnmwp8ArnR8z8EoqQu2RsbAFpMr";
     const entry = createLedgerEntry({
       label: "weather",
       resource: "/api/x402/weather",
@@ -183,16 +185,19 @@ describe("adversarial controls", () => {
       amountBaseUnits: "100000",
       mint: DEVNET_USDC_MINT,
       settlementKind: "x402",
+      resourceId: "weather-brief",
+      fromOwner: wallet,
     });
     setLedgerStatus(entry.id, "approved");
     const denied = fulfillWeatherIfSettled({
-      amountBaseUnits: "100000",
       entryId: entry.id,
+      ownerWallet: wallet,
     });
     assert.equal(denied.ok, false);
   });
 
   it("re-delivers settled content without requiring a new charge", () => {
+    const wallet = "AxYkHSSywB5pxa4GCwnmwp8ArnR8z8EoqQu2RsbAFpMr";
     const entry = createLedgerEntry({
       label: "weather",
       resource: "/api/x402/weather",
@@ -200,21 +205,76 @@ describe("adversarial controls", () => {
       amountBaseUnits: "100000",
       mint: DEVNET_USDC_MINT,
       settlementKind: "x402",
+      resourceId: "weather-brief",
+      fromOwner: wallet,
     });
     setLedgerStatus(entry.id, "settled", { signature: "fakeSigForTest" });
     const first = fulfillWeatherIfSettled({
-      amountBaseUnits: "100000",
       entryId: entry.id,
+      ownerWallet: wallet,
     });
     assert.equal(first.ok, true);
     const second = fulfillWeatherIfSettled({
-      amountBaseUnits: "100000",
       entryId: entry.id,
+      ownerWallet: wallet,
     });
     assert.equal(second.ok, true);
     if (first.ok && second.ok) {
       assert.equal(first.body.contentDigest, second.body.contentDigest);
     }
+  });
+
+  it("rejects another wallet unlocking purchased content", () => {
+    const entry = createLedgerEntry({
+      label: "weather",
+      resource: "/api/x402/weather",
+      payee: "AxYkHSSywB5pxa4GCwnmwp8ArnR8z8EoqQu2RsbAFpMr",
+      amountBaseUnits: "100000",
+      mint: DEVNET_USDC_MINT,
+      settlementKind: "x402",
+      resourceId: "weather-brief",
+      fromOwner: "AxYkHSSywB5pxa4GCwnmwp8ArnR8z8EoqQu2RsbAFpMr",
+    });
+    setLedgerStatus(entry.id, "settled", { signature: "fakeSigForTest" });
+    const denied = fulfillWeatherIfSettled({
+      entryId: entry.id,
+      ownerWallet: "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+    });
+    assert.equal(denied.ok, false);
+    if (!denied.ok) assert.equal(denied.code, "forbidden");
+  });
+
+  it("blocks unapproved origin that only matches pathname", () => {
+    const decision = reviewSpend(
+      {
+        resource: "https://evil.example/api/x402/weather",
+        payee: "AxYkHSSywB5pxa4GCwnmwp8ArnR8z8EoqQu2RsbAFpMr",
+        amountBaseUnits: 100_000n,
+        mint: DEVNET_USDC_MINT,
+      },
+      config,
+      0n,
+    );
+    assert.equal(decision.status, "block");
+  });
+
+  it("default-budget path records merchant block without reservation", async () => {
+    const { evaluateCatalogPropose } = await import("../propose/evaluate");
+    const { createTask, reservedBaseUnits } = await import("../ledger/store");
+    const task = createTask({
+      prompt: "demo",
+      budgetBaseUnits: "1000000",
+      ownerWallet: "AxYkHSSywB5pxa4GCwnmwp8ArnR8z8EoqQu2RsbAFpMr",
+    });
+    const result = evaluateCatalogPropose({
+      resourceId: "evil-drain",
+      taskId: task.id,
+      fromOwner: "AxYkHSSywB5pxa4GCwnmwp8ArnR8z8EoqQu2RsbAFpMr",
+      allowAdversarialFixture: true,
+    });
+    assert.equal(result.decision.status, "block");
+    assert.equal(result.reserved, false);
+    assert.equal(reservedBaseUnits(task.id), 0n);
   });
 
   it("task budget is tracked separately from daily cap", () => {

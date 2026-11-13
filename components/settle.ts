@@ -5,19 +5,25 @@ type PhantomLike = {
   signTransaction: (tx: Transaction) => Promise<Transaction>;
 };
 
+function csrfHeader(): HeadersInit {
+  if (typeof document === "undefined") return {};
+  const match = document.cookie.match(/(?:^|; )pd_csrf=([^;]*)/);
+  const csrf = match?.[1] ? decodeURIComponent(match[1]) : "";
+  return csrf ? { "x-csrf-token": csrf } : {};
+}
+
 export async function settleEntry(args: {
   entryId: string;
   fromOwner: string;
   provider: PhantomLike;
   selfPay?: boolean;
-  operatorToken?: string;
 }): Promise<LedgerEntry> {
   const prepareRes = await fetch("/api/settle/prepare", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    headers: { "Content-Type": "application/json", ...csrfHeader() },
     body: JSON.stringify({
       entryId: args.entryId,
-      fromOwner: args.fromOwner,
       selfPay: args.selfPay,
     }),
   });
@@ -42,7 +48,8 @@ export async function settleEntry(args: {
 
   const confirmRes = await fetch("/api/settle/confirm", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    headers: { "Content-Type": "application/json", ...csrfHeader() },
     body: JSON.stringify({
       entryId: args.entryId,
       prepareId: prepare.entry?.prepareId,
@@ -58,14 +65,14 @@ export async function settleEntry(args: {
 
 export async function approveEntry(
   entryId: string,
-  operatorToken: string,
   intentHash?: string,
 ): Promise<LedgerEntry> {
   const res = await fetch(`/api/approvals/${entryId}`, {
     method: "POST",
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
-      "x-operator-token": operatorToken,
+      ...csrfHeader(),
     },
     body: JSON.stringify({ action: "approve", intentHash }),
   });
