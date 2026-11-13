@@ -29,7 +29,10 @@ function state(): LedgerState {
       loaded: false,
     };
   }
-  return globalThis.__policyDeskLedger;
+  const s = globalThis.__policyDeskLedger;
+  // Hot-reload / older process state may lack streamEvents.
+  if (!Array.isArray(s.streamEvents)) s.streamEvents = [];
+  return s;
 }
 
 function dataPath(): string {
