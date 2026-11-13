@@ -68,7 +68,7 @@
 | Streams webhook | Ticker only — not payment reconcile; do not claim Streams bounty yet |
 | Fixture agent | Deterministic tools labeled in UI — not a live model |
 | Live agent | Bounded tool loop with server credentials; unverified without `OPENAI_API_KEY`; no arbitrary URL fetch / operator secrets |
-| File-store concurrency | Mutex is single-process only; not multi-instance safe |
+| SQLite ledger | Durable with `BEGIN IMMEDIATE`; prefer single writer. In-process mutex alone is not multi-worker protection |
 | Phantom UX | User can still sign unrelated txs outside this desk |
 | Public tunnel / deploy URL | Anyone with the URL + operator token can hit approval APIs — rotate token for public demos |
 | RPC / faucet availability | External dependency; dry-run still shows policy path if chain is down |

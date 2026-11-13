@@ -1,6 +1,4 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
-import path from "node:path";
 import { appendAudit } from "@/lib/security/audit";
 import { POLICY_VERSION } from "@/lib/policy/version";
 import { X402_DEVNET_NETWORK } from "@/lib/solana/config";
@@ -18,6 +16,15 @@ import {
   IMMUTABLE_INTENT_FIELDS,
   RESERVED_STATUSES,
 } from "./types";
+import {
+  closeLedgerDb,
+  loadAllFromDb,
+  openLedgerDb,
+  upsertEntry,
+  upsertStreamEvent,
+  upsertTask,
+  withDbTransaction,
+} from "./db";
 
 type LedgerState = {
   entries: Map<string, LedgerEntry>;
@@ -31,6 +38,8 @@ declare global {
   var __policyDeskLedger: LedgerState | undefined;
   // eslint-disable-next-line no-var
   var __policyDeskLedgerChain: Promise<unknown> | undefined;
+  // eslint-disable-next-line no-var
+  var __policyDeskLedgerTestMode: boolean | undefined;
 }
 
 function state(): LedgerState {
@@ -48,7 +57,12 @@ function state(): LedgerState {
   return s;
 }
 
-/** Serialize mutations in-process (Node is single-threaded; this covers async interleaving). */
+/**
+ * Serialize async mutations in-process.
+ * Durable mutual exclusion across processes uses SQLite BEGIN IMMEDIATE
+ * in persist helpers — do not claim the in-process chain alone is enough
+ * for multi-worker deployments.
+ */
 export async function withLedgerLock<T>(fn: () => T | Promise<T>): Promise<T> {
   const prev = globalThis.__policyDeskLedgerChain ?? Promise.resolve();
   let release!: () => void;
@@ -62,10 +76,6 @@ export async function withLedgerLock<T>(fn: () => T | Promise<T>): Promise<T> {
   } finally {
     release();
   }
-}
-
-function dataPath(): string {
-  return path.join(process.cwd(), ".data", "ledger.json");
 }
 
 function nowIso(): string {
@@ -91,27 +101,32 @@ function intentHash(input: CreateLedgerInput): string {
   return createHash("sha256").update(payload).digest("hex");
 }
 
-function persist(): void {
-  try {
-    const dir = path.dirname(dataPath());
-    mkdirSync(dir, { recursive: true });
-    const s = state();
-    writeFileSync(
-      dataPath(),
-      JSON.stringify(
-        {
-          entries: [...s.entries.values()],
-          tasks: [...s.tasks.values()],
-          streamEvents: s.streamEvents.slice(0, 200),
-        },
-        null,
-        2,
-      ),
-      "utf8",
-    );
-  } catch {
-    /* best-effort */
-  }
+function persistEntry(entry: LedgerEntry): void {
+  const db = openLedgerDb();
+  withDbTransaction(db, () => {
+    upsertEntry(db, entry);
+  });
+}
+
+function persistTask(task: ResearchTask): void {
+  const db = openLedgerDb();
+  withDbTransaction(db, () => {
+    upsertTask(db, task);
+  });
+}
+
+function persistStream(event: StreamEvent, trim = true): void {
+  const db = openLedgerDb();
+  withDbTransaction(db, () => {
+    upsertStreamEvent(db, event);
+    if (trim) {
+      db.prepare(
+        `DELETE FROM stream_events WHERE id NOT IN (
+          SELECT id FROM stream_events ORDER BY received_at DESC LIMIT 200
+        )`,
+      ).run();
+    }
+  });
 }
 
 function ensureLoaded(): void {
@@ -119,24 +134,13 @@ function ensureLoaded(): void {
   if (s.loaded) return;
   s.loaded = true;
   try {
-    if (!existsSync(dataPath())) return;
-    const raw = readFileSync(dataPath(), "utf8");
-    const parsed = JSON.parse(raw) as {
-      entries?: LedgerEntry[];
-      tasks?: ResearchTask[];
-      streamEvents?: StreamEvent[];
-    };
-    for (const entry of parsed.entries ?? []) {
-      s.entries.set(entry.id, entry);
-    }
-    for (const task of parsed.tasks ?? []) {
-      s.tasks.set(task.id, task);
-    }
-    if (Array.isArray(parsed.streamEvents)) {
-      s.streamEvents.push(...parsed.streamEvents);
-    }
+    const db = openLedgerDb();
+    const loaded = loadAllFromDb(db);
+    for (const entry of loaded.entries) s.entries.set(entry.id, entry);
+    for (const task of loaded.tasks) s.tasks.set(task.id, task);
+    s.streamEvents.push(...loaded.streamEvents);
   } catch {
-    /* start empty */
+    /* start empty if DB cannot open */
   }
 }
 
@@ -190,7 +194,7 @@ export function createLedgerEntry(input: CreateLedgerInput): LedgerEntry {
     deliveryStatus: "pending",
   };
   state().entries.set(entry.id, entry);
-  persist();
+  persistEntry(entry);
   appendAudit("ledger.create", {
     entryId: entry.id,
     label: entry.label,
@@ -218,7 +222,6 @@ export function updateLedgerEntry(
     }
   }
 
-  // fromOwner may be bound once (wallet session); never reassigned
   if (
     patch.fromOwner !== undefined &&
     existing.fromOwner &&
@@ -237,7 +240,7 @@ export function updateLedgerEntry(
     fromOwner: existing.fromOwner ?? patch.fromOwner,
   };
   state().entries.set(id, next);
-  persist();
+  persistEntry(next);
   return next;
 }
 
@@ -309,11 +312,13 @@ export function confirmedBaseUnits(
  * When rechecking an existing intent, pass excludeEntryId so its reservation
  * is not double-counted.
  *
- * Deployment: single Node process with in-process mutex (withLedgerLock).
- * Not safe across multiple server workers — use one process or external DB locks.
+ * Durability: SQLite file (`.data/ledger.sqlite`) with BEGIN IMMEDIATE writes.
+ * In-process `withLedgerLock` covers async interleaving in one Node process.
+ * Multi-worker: rely on SQLite locking + prefer a single writer; do not claim
+ * the in-process mutex alone protects cross-process budgets.
  *
- * Daily boundary: rolling 24h is NOT implemented; “daily” = process/ledger lifetime
- * until `.data/ledger.json` reset. Unresolved (confirming) stays reserved.
+ * Daily boundary: rolling 24h is NOT implemented; “daily” = ledger lifetime
+ * until DB reset. Unresolved (confirming) stays reserved.
  */
 export function dailySpentBaseUnits(excludeEntryId?: string): bigint {
   return (
@@ -379,7 +384,7 @@ export function createTask(input: {
     ],
   };
   state().tasks.set(task.id, task);
-  persist();
+  persistTask(task);
   appendAudit("task.create", {
     taskId: task.id,
     budgetBaseUnits: task.budgetBaseUnits,
@@ -420,7 +425,7 @@ export function appendTaskEvent(
     timeline: [...task.timeline, nextEvent],
   };
   state().tasks.set(taskId, next);
-  persist();
+  persistTask(next);
   return next;
 }
 
@@ -440,7 +445,7 @@ export function updateTask(
     timeline: patch.timeline ?? task.timeline,
   };
   state().tasks.set(taskId, next);
-  persist();
+  persistTask(next);
   return next;
 }
 
@@ -478,7 +483,7 @@ export function appendStreamEvent(input: {
   const s = state();
   s.streamEvents.unshift(event);
   if (s.streamEvents.length > 200) s.streamEvents.length = 200;
-  persist();
+  persistStream(event);
   appendAudit("streams.event", {
     eventId: event.id,
     signature: event.signature,
@@ -491,7 +496,16 @@ export function listStreamEvents(limit = 40): StreamEvent[] {
   return state().streamEvents.slice(0, limit);
 }
 
-export function resetLedgerForTests(): void {
+export function resetLedgerForTests(dbPath = ":memory:"): void {
+  closeLedgerDb();
+  process.env.LEDGER_DB_PATH = dbPath;
+  globalThis.__policyDeskLedgerTestMode = true;
+  const db = openLedgerDb(dbPath);
+  withDbTransaction(db, () => {
+    db.exec("DELETE FROM entries");
+    db.exec("DELETE FROM tasks");
+    db.exec("DELETE FROM stream_events");
+  });
   globalThis.__policyDeskLedger = {
     entries: new Map(),
     tasks: new Map(),
@@ -499,4 +513,17 @@ export function resetLedgerForTests(): void {
     loaded: true,
   };
   globalThis.__policyDeskLedgerChain = Promise.resolve();
+}
+
+/** Drop in-memory cache and reopen SQLite from disk (restart simulation). */
+export function reopenLedgerFromDisk(): void {
+  closeLedgerDb();
+  globalThis.__policyDeskLedger = {
+    entries: new Map(),
+    tasks: new Map(),
+    streamEvents: [],
+    loaded: false,
+  };
+  globalThis.__policyDeskLedgerChain = Promise.resolve();
+  ensureLoaded();
 }

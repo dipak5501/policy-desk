@@ -117,7 +117,7 @@ export async function runFixtureStep(
         appendTaskEvent(taskId, {
           kind: "agent.recover",
           message:
-            "Fixture agent recovered — selecting allowlisted weather brief instead.",
+            "Fixture agent recovered — selecting allowlisted demo-catalog weather brief instead.",
         });
         return {
           task: getTask(taskId)!,

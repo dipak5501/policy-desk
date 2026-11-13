@@ -2,13 +2,23 @@
 
 > **Built during UBC Hackathon 2026** (official hacking began Thu Nov 12, 6:00 PM CST).  
 > Prep research / gallery notes lived in a separate private reference project — **this repository’s git history starts after kickoff.**  
-> Repo stays **private** until Devpost submission; flip to public before submit.
+> Flip the GitHub repo to **public** before Devpost submit if it is still private.
 
 Policy-gated Solana USDC spending for a **research agent** that buys useful data within budget. Flow judges can see in ~90 seconds:
 
 **start task → inspect catalog → blocked recover → approve (if needed) → simulate → Phantom sign → confirm (TransferChecked validated) → deliver paid content → answer + structured receipt**
 
-Agent execution ships as labeled **fixture mode** (deterministic tools). Optional **live** mode (`OPENAI_API_KEY`) runs a bounded, schema-validated tool loop with approval/payment pauses — never present fixture steps as silent live-model execution.
+Agent execution ships as labeled **fixture mode** (deterministic tools). Optional **live** mode (`OPENAI_API_KEY`) runs a bounded, schema-validated tool loop with approval/payment pauses — never present fixture steps as silent live-model execution. Without the key: **LIVE UNVERIFIED**.
+
+## Pitch
+
+AI agents that can pay are useful until they are dangerous. Policy Desk gives an agent a USDC budget on Solana Devnet, then enforces allowlists, caps, and a human approval widget above a threshold. Money only moves when policy says yes — and the desk shows every decision.
+
+**Agents get a budget — not a blank check.**
+
+## Control plane framing (AgentiPy-style)
+
+**Policy + catalog** is the reusable control plane: the model/UI may only request a server `resourceId`. Payee, mint, amount, and settlement path are bound server-side. Approvals, prepare/confirm, and delivery are separate gates — not “agent has a wallet.”
 
 ## Engineering team
 
@@ -24,25 +34,19 @@ Day-by-day ownership: [docs/TEAM-SPLIT.md](docs/TEAM-SPLIT.md).
 
 | Doc | Purpose |
 |---|---|
-| [docs/WIN-PLAN.md](docs/WIN-PLAN.md) | Track targets, thesis, 90s story, non-goals, success criteria |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | propose→…→receipt, x402, trust boundaries, Devnet USDC |
-| [docs/ORGANIZER-RESOURCES.md](docs/ORGANIZER-RESOURCES.md) | Sponsor/organizer resources checklist (RPC, mint, Phantom, x402, faucets, Streams) |
-| [docs/FEATURE-BACKLOG.md](docs/FEATURE-BACKLOG.md) | P0/P1/P2 from gallery best-of, acceptance criteria, owners |
-| [docs/TEAM-SPLIT.md](docs/TEAM-SPLIT.md) | Day 1–5 plan → Fri Nov 20 12:00 PM CST |
-| [docs/THREAT-MODEL.md](docs/THREAT-MODEL.md) | Honest guarantees + limitations (Utkarsh-owned) |
-| [docs/STREAMS.md](docs/STREAMS.md) | QuickNode Streams webhook setup |
-| [docs/RESOURCES.md](docs/RESOURCES.md) | Compact resource status table |
-
-## Pitch
-
-AI agents that can pay are useful until they are dangerous. Policy Desk gives an agent a USDC budget on Solana Devnet, then enforces allowlists, caps, and a human approval widget above a threshold. Money only moves when policy says yes — and the desk shows every decision.
-
-**Agents get a budget — not a blank check.**
+| [docs/WIN-PLAN.md](docs/WIN-PLAN.md) | Track targets, thesis, 90s story, non-goals |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | propose→…→receipt, x402, trust boundaries |
+| [docs/THREAT-MODEL.md](docs/THREAT-MODEL.md) | Guarantees + limitations (matches code) |
+| [docs/DEMO-SCRIPT.md](docs/DEMO-SCRIPT.md) | 2–3 min filming script |
+| [docs/DEVPOST-ANSWERS.md](docs/DEVPOST-ANSWERS.md) | Short Devpost draft answers |
+| [docs/ORGANIZER-RESOURCES.md](docs/ORGANIZER-RESOURCES.md) | Sponsor/organizer checklist |
+| [docs/FEATURE-BACKLOG.md](docs/FEATURE-BACKLOG.md) | P0/P1/P2 |
+| [docs/STREAMS.md](docs/STREAMS.md) | QuickNode Streams webhook (ticker only) |
 
 ## Architecture
 
 ```
-Task + budget → fixture agent tools → catalog resourceId
+Task + budget → fixture/live agent tools → catalog resourceId
                      ↓
               lib/policy (allow / block / needs_approval)
                      ↓
@@ -55,39 +59,30 @@ Task + budget → fixture agent tools → catalog resourceId
          x402 deliver only after settled → answer cites purchase
 ```
 
-Full write-up: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Ledger durability: **SQLite** (`.data/ledger.sqlite`) with `BEGIN IMMEDIATE` writes. In-process `withLedgerLock` covers async interleaving in one Node process — not a substitute for multi-worker DB locking documentation. Full write-up: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-## Gallery-inspired features (demo-visible)
+## Demo catalog (3 purchasable + 1 adversarial)
 
-1. Human approval widgets (SeaPay-style pause)
-2. Visible policy decisions + audit log (Agent Guard twin)
-3. x402 quote → pay → resume
-4. Clear payment state machine
-5. First-class receipts with explorer links
-6. Dry-run / simulate before broadcast
-7. Honest **block before sign** (no fake escrow vault)
-8. Gas/fee clarity + insufficient SOL/USDC handling
-9. Treasury desk metaphor + posture labels + LIVE ticker
-10. Trust strip: Devnet, mint, wallet, allowlist
-11. Official resource strip (faucets, Phantom, x402, Circle mint, Streams)
-12. QuickNode Streams webhook → LIVE ticker only (`docs/STREAMS.md`) — **not** payment reconcile; **do not claim the Streams bounty** until reconcile ships
+| ID | Price | Role |
+|---|---|---|
+| `weather-brief` | $0.10 | Under-threshold purchase |
+| `market-pulse` | $0.25 | Distinct mid-price product |
+| `weather-deep` | $0.60 | Needs operator approval |
+| `evil-drain` | $2.50 | Labeled adversarial — must block |
 
-Deferred: sponsored/gasless fees, on-chain vault/escrow PDAs, CCTP, NFT attestation — see [docs/FEATURE-BACKLOG.md](docs/FEATURE-BACKLOG.md). Optional live LLM mode needs `OPENAI_API_KEY` (otherwise fixture-only).
-
-## Organizer APIs wired
-
-See [docs/ORGANIZER-RESOURCES.md](docs/ORGANIZER-RESOURCES.md). Core: Solana Devnet RPC, Circle Devnet USDC mint `4zMMC9…`, Phantom connect/sign, x402 V2 weather quote, SOL + Circle faucets. Optional: QuickNode Streams.
+Paid bodies are team-authored **demo catalog** briefs (`[DEMO CATALOG]`), unlocked only after settlement — not live oracles.
 
 ## Run locally
 
 ```bash
 export PATH="$HOME/.nvm/versions/node/v22.18.0/bin:$PATH"  # if needed
 cd policy-desk
-cp .env.example .env.local
+cp .env.example .env.local   # set OPERATOR_TOKEN + SESSION_SECRET (server-only)
 npm install
 npm test
+npm run typecheck
 npm run build
-npm run dev
+npm run start   # or: npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
@@ -105,23 +100,29 @@ cat .tunnel-url
 2. SOL — https://faucet.solana.com
 3. USDC — https://faucet.circle.com (Solana / Devnet / USDC)
 
-## Demo script (~60–90s)
+## Demo script (~60–90s live / 2–3 min film)
 
-1. Open Policy Desk → Connect Phantom (Devnet) → sign wallet login challenge (HttpOnly session + CSRF in JSON / shared client state — not `document.cookie`).
-2. Operator login (server password → HttpOnly session + CSRF) for above-threshold approvals.
-3. Point at **Fixture mode** banner (honest labeling).
-4. **Run research demo**:
-   - Task budget $1.00 → inspect catalog.
-   - Prohibited merchant blocked (no reservation) → recover.
-   - Approved alternative above threshold → operator approve → simulate → Phantom sign → confirm.
-   - Sample content delivered for that intent only → answer + structured receipt.
+See [docs/DEMO-SCRIPT.md](docs/DEMO-SCRIPT.md).
+
+1. Connect Phantom → sign wallet login (HttpOnly + CSRF from auth JSON).
+2. Operator login for above-threshold approvals.
+3. Point at **Fixture mode** + **demo catalog**.
+4. Task budget $1.00 → block $2.50 → approve $0.60 → simulate → sign → confirm → deliver → receipt.
 5. One-liner: “Agents get a budget — not a blank check.”
 
-**Limits:** single-process ledger mutex (not multi-worker); local x402 is a ledger-gated demo merchant; Streams ticker ≠ bounty reconcile; weather body is labeled sample content; live mode unverified without `OPENAI_API_KEY`.
+**Limits:** SQLite prototype (single writer preferred); local x402 is a ledger-gated demo merchant; Streams ticker ≠ bounty reconcile; demo catalog content is labeled; live mode unverified without `OPENAI_API_KEY`.
 
-## Threat model
+## Threat model (JailbreakMe-style honesty)
 
-See [docs/THREAT-MODEL.md](docs/THREAT-MODEL.md) for enforced guarantees and honest limitations.
+Attacks that **fail with clear reasons** (see tests + UI):
+
+- Client payee/amount/mint overrides on `/api/agent/propose`
+- Non-allowlisted / adversarial merchant
+- Cross-user content unlock
+- CSRF without auth JSON token
+- Confirm without matching `prepareId` / with client `toOwner`
+
+Details: [docs/THREAT-MODEL.md](docs/THREAT-MODEL.md).
 
 ## Eligibility note
 

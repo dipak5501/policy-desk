@@ -1,9 +1,15 @@
 import { NextResponse } from "next/server";
-import { demoScenarios } from "@/lib/agent/scenarios";
+import { listCatalog } from "@/lib/catalog/resources";
 import { getTask, withLedgerLock } from "@/lib/ledger/store";
 import { evaluateCatalogPropose } from "@/lib/propose/evaluate";
 import { POLICY_VERSION } from "@/lib/policy/version";
 import { appendAudit } from "@/lib/security/audit";
+import {
+  allowRate,
+  clientKey,
+  rateLimitResponse,
+  readJsonBody,
+} from "@/lib/security/httpLimits";
 import { assertCsrf, readWalletSession } from "@/lib/security/session";
 
 export const runtime = "nodejs";
@@ -32,6 +38,9 @@ type Body = {
  */
 export async function POST(request: Request) {
   try {
+    if (!allowRate(`agent-propose:${clientKey(request)}`, 60, 60_000)) {
+      return rateLimitResponse();
+    }
     const wallet = readWalletSession(request);
     if (!wallet) {
       return NextResponse.json(
@@ -43,7 +52,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "CSRF validation failed" }, { status: 403 });
     }
 
-    const body = (await request.json()) as Body;
+    const parsed = await readJsonBody<Body>(request, 16_384);
+    if (!parsed.ok) {
+      return NextResponse.json(
+        { error: parsed.error },
+        { status: parsed.status },
+      );
+    }
+    const body = parsed.body;
 
     // Fail closed on client economic overrides
     const forbiddenOverrides = [
@@ -126,7 +142,7 @@ export async function POST(request: Request) {
 
 export async function GET() {
   return NextResponse.json({
-    scenarios: demoScenarios(),
+    catalog: listCatalog().map(({ paidBody: _p, ...row }) => row),
     note: "POST /api/agent/propose is catalog-bound: supply resourceId (+ taskId). Client payee/amount/mint overrides are rejected.",
   });
 }

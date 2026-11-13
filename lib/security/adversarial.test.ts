@@ -24,7 +24,12 @@ const config: PolicyConfig = {
   dailyCapBaseUnits: 5_000_000n,
   approvalThresholdBaseUnits: 500_000n,
   allowlistedPayees: ["AxYkHSSywB5pxa4GCwnmwp8ArnR8z8EoqQu2RsbAFpMr"],
-  allowlistedResources: ["/api/x402/weather", "spl:transfer"],
+  allowlistedResources: [
+    "/api/x402/weather",
+    "/api/x402/market",
+    "/api/x402/research",
+    "spl:transfer",
+  ],
   allowlistedDomains: ["localhost", "127.0.0.1"],
   allowedMint: DEVNET_USDC_MINT,
   paused: false,
@@ -337,6 +342,56 @@ describe("adversarial controls", () => {
     assert.equal(result.entry.mint, catalog!.mint);
     assert.equal(result.entry.resource, catalog!.resource);
     assert.equal(result.entry.fromOwner, owner);
+  });
+
+  it("cross-user: another wallet cannot fulfill a settled purchase", () => {
+    const owner = "AxYkHSSywB5pxa4GCwnmwp8ArnR8z8EoqQu2RsbAFpMr";
+    const entry = createLedgerEntry({
+      label: "market",
+      resource: "/api/x402/market",
+      payee: owner,
+      amountBaseUnits: "250000",
+      mint: DEVNET_USDC_MINT,
+      settlementKind: "x402",
+      resourceId: "market-pulse",
+      fromOwner: owner,
+    });
+    setLedgerStatus(entry.id, "settled", { signature: "sig-cross-user" });
+    const denied = fulfillWeatherIfSettled({
+      entryId: entry.id,
+      ownerWallet: "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+    });
+    assert.equal(denied.ok, false);
+    if (!denied.ok) assert.equal(denied.code, "forbidden");
+  });
+
+  it("expired prepare is not usable for confirm binding", () => {
+    const owner = "AxYkHSSywB5pxa4GCwnmwp8ArnR8z8EoqQu2RsbAFpMr";
+    const entry = createLedgerEntry({
+      label: "expired",
+      resource: "/api/x402/weather",
+      payee: owner,
+      amountBaseUnits: "100000",
+      mint: DEVNET_USDC_MINT,
+      fromOwner: owner,
+    });
+    const expired = setLedgerStatus(entry.id, "ready_to_sign", {
+      prepareId: "prep-1",
+      prepareExpiresAt: new Date(Date.now() - 60_000).toISOString(),
+      preparedTxBase64: "AQID",
+      preparedToOwner: owner,
+    });
+    assert.ok(expired.prepareExpiresAt);
+    assert.ok(Date.parse(expired.prepareExpiresAt!) < Date.now());
+  });
+
+  it("demo catalog exposes three distinct purchasable prices", async () => {
+    const { listCatalog } = await import("../catalog/resources");
+    const catalog = listCatalog();
+    assert.equal(catalog.length, 3);
+    const prices = catalog.map((r) => r.amountBaseUnits).sort();
+    assert.deepEqual(prices, ["100000", "250000", "600000"]);
+    assert.ok(catalog.every((r) => r.paidBody.includes("[DEMO CATALOG]")));
   });
 });
 

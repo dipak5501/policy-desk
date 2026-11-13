@@ -10,6 +10,8 @@ export const DEMO_PAYEE =
   "AxYkHSSywB5pxa4GCwnmwp8ArnR8z8EoqQu2RsbAFpMr";
 
 export const DEMO_X402_RESOURCE = "/api/x402/weather";
+export const DEMO_X402_MARKET_RESOURCE = "/api/x402/market";
+export const DEMO_X402_RESEARCH_RESOURCE = "/api/x402/research";
 export const DEMO_BLOCKED_RESOURCE = "https://evil.example/buy-everything";
 
 function parseBaseUnits(value: string | undefined, fallback: bigint): bigint {
@@ -36,7 +38,12 @@ export function defaultPolicyConfig(): PolicyConfig {
       500_000n,
     ),
     allowlistedPayees: [DEMO_PAYEE],
-    allowlistedResources: [DEMO_X402_RESOURCE, "spl:transfer"],
+    allowlistedResources: [
+      DEMO_X402_RESOURCE,
+      DEMO_X402_MARKET_RESOURCE,
+      DEMO_X402_RESEARCH_RESOURCE,
+      "spl:transfer",
+    ],
     allowlistedDomains: ["127.0.0.1", "localhost"],
     allowedMint: process.env.NEXT_PUBLIC_USDC_MINT ?? DEVNET_USDC_MINT,
     paused: process.env.POLICY_PAUSED === "true",

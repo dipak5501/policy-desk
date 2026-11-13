@@ -10,7 +10,12 @@ const config: PolicyConfig = {
   dailyCapBaseUnits: 5_000_000n,
   approvalThresholdBaseUnits: 500_000n,
   allowlistedPayees: [DEMO_PAYEE],
-  allowlistedResources: [DEMO_X402_RESOURCE, "spl:transfer"],
+  allowlistedResources: [
+    DEMO_X402_RESOURCE,
+    "/api/x402/market",
+    "/api/x402/research",
+    "spl:transfer",
+  ],
   allowlistedDomains: ["localhost", "127.0.0.1"],
   allowedMint: DEVNET_USDC_MINT,
   paused: false,
@@ -88,5 +93,19 @@ describe("reviewSpend", () => {
       cfg,
     );
     assert.equal(d.status, "allow");
+  });
+
+  it("allows relative catalog paths with query strings", () => {
+    const d = reviewSpend(
+      {
+        resource: "/api/x402/research?amount=600000",
+        payee: DEMO_PAYEE,
+        amountBaseUnits: 600_000n,
+        mint: DEVNET_USDC_MINT,
+        ...trusted,
+      },
+      config,
+    );
+    assert.equal(d.status, "needs_approval");
   });
 });

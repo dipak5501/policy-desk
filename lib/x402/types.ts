@@ -47,6 +47,7 @@ export type PaymentResponseBody = {
 };
 
 export const DEFAULT_X402_PRICE_BASE_UNITS = "100000"; // $0.10
+export const DEMO_MID_AMOUNT_BASE_UNITS = "250000"; // $0.25
 export const DEMO_APPROVAL_AMOUNT_BASE_UNITS = "600000"; // $0.60
 
 export function requirementAmount(req: PaymentRequirement): string {

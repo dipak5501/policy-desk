@@ -41,21 +41,28 @@ export function resourceAllowed(
     return true;
   }
 
-  // Exact allowlisted string (including query for deep weather)
-  if (config.allowlistedResources.includes(resource)) {
-    if (resource.startsWith("/")) {
-      // Relative path: require trusted origin binding from catalog/server
-      const origin = request.trustedOrigin;
-      if (!origin) return false;
-      try {
-        const u = new URL(origin);
-        if (u.protocol !== "http:" && u.protocol !== "https:") return false;
-        if (!config.allowlistedDomains.includes(u.hostname)) return false;
-        return true;
-      } catch {
-        return false;
-      }
+  // Relative merchant paths (optional ?query): match allowlisted pathname + trusted origin
+  if (resource.startsWith("/")) {
+    const path = resourcePath(resource);
+    const pathOk = config.allowlistedResources.some((r) => {
+      if (!r.startsWith("/")) return false;
+      return resourcePath(r) === path;
+    });
+    if (!pathOk) return false;
+    const origin = request.trustedOrigin;
+    if (!origin) return false;
+    try {
+      const u = new URL(origin);
+      if (u.protocol !== "http:" && u.protocol !== "https:") return false;
+      if (!config.allowlistedDomains.includes(u.hostname)) return false;
+      return true;
+    } catch {
+      return false;
     }
+  }
+
+  // Exact allowlisted absolute resource string
+  if (config.allowlistedResources.includes(resource)) {
     return true;
   }
 

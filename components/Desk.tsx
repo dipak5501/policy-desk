@@ -443,6 +443,8 @@ function DeskInner() {
         </div>
         <p className="fixture-banner" role="status">
           Fixture mode is labeled — deterministic tools, not a silent live LLM.
+          Catalog is a <strong>demo catalog</strong> (3 purchasable briefs + 1
+          adversarial fixture); paid bodies unlock only after settlement.
         </p>
         {address ? (
           <p className="wallet-line mono">
@@ -568,7 +570,12 @@ function DeskInner() {
             </button>
           </div>
 
-          <h3>Catalog preview</h3>
+          <h3>Demo catalog</h3>
+          <p className="muted">
+            Three purchasable products ($0.10 / $0.25 / $0.60) plus a labeled
+            adversarial fixture. Prices are coherent so the receipt answers
+            “what did the agent buy?”
+          </p>
           <ul className="catalog-list">
             {catalog.map((r) => (
               <li key={r.id}>
@@ -576,7 +583,11 @@ function DeskInner() {
                 <span
                   className={`pill ${r.allowlisted ? "status-approved" : "status-blocked"}`}
                 >
-                  {r.allowlisted ? "allowlisted" : "blocked"}
+                  {r.adversarialFixture
+                    ? "adversarial"
+                    : r.allowlisted
+                      ? "purchasable"
+                      : "blocked"}
                 </span>
                 <p className="muted">{r.preview}</p>
                 <p className="mono">
