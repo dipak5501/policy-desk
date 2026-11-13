@@ -8,13 +8,13 @@ Policy-gated Solana USDC spending for AI agents. Flow judges can see in ~90 seco
 
 **propose → policy evaluate → human approve → dry-run simulate → Phantom sign → Devnet settle → receipt**
 
-## Team
+## Engineering team
 
-| GitHub | Name | Role |
+| GitHub | Name | Role · ownership |
 |---|---|---|
-| [@dipak5501](https://github.com/dipak5501) | Dipak Yadav | Full-stack developer · product/engineering lead |
-| [@ubiiii](https://github.com/ubiiii) | Utkarsh Lubal | Cybersecurity engineer |
-| [@KashifManzer](https://github.com/KashifManzer) | Kashif Manzer | Blockchain engineer |
+| [@dipak5501](https://github.com/dipak5501) | Dipak Yadav | Full-stack developer · product/engineering lead — desk UX, APIs, demo, Devpost |
+| [@ubiiii](https://github.com/ubiiii) | Utkarsh Lubal | Cybersecurity engineer — threat model, operator gate, adversarial tests |
+| [@KashifManzer](https://github.com/KashifManzer) | Kashif Manzer | Blockchain engineer — Solana USDC settle, Phantom, x402, Streams |
 
 Day-by-day ownership: [docs/TEAM-SPLIT.md](docs/TEAM-SPLIT.md).
 
