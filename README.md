@@ -44,10 +44,16 @@ Agent propose → lib/policy (allow / block / needs_approval)
 6. Dry-run / simulate before broadcast
 7. Honest **block before sign** (no fake escrow vault)
 8. Gas/fee clarity + insufficient SOL/USDC handling
-9. Treasury desk metaphor + FRCT-style posture labels
+9. Treasury desk metaphor + posture labels + LIVE ticker
 10. Trust strip: Devnet, mint, wallet, allowlist
+11. Official resource strip (faucets, Phantom, x402, Circle mint, Streams)
+12. QuickNode Streams webhook → LIVE feed (`docs/STREAMS.md`)
 
-Deferred: sponsored/gasless fees, on-chain escrow PDAs, CCTP cross-chain, NFT attestation mints, Ollama propose.
+Deferred: sponsored/gasless fees, on-chain escrow PDAs, CCTP, NFT attestation, Ollama propose.
+
+## Organizer APIs wired
+
+See [docs/RESOURCES.md](docs/RESOURCES.md). Core: Solana Devnet RPC, Circle Devnet USDC mint, Phantom connect/sign, x402 V2 weather quote, SOL + Circle faucets. Optional: QuickNode Streams.
 
 ## Run locally
 

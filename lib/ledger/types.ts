@@ -53,6 +53,16 @@ export type CreateLedgerInput = {
   scenario?: LedgerEntry["scenario"];
 };
 
+/** QuickNode Streams webhook hits (optional $500 bounty). */
+export type StreamEvent = {
+  id: string;
+  receivedAt: string;
+  source: "quicknode_streams";
+  signature?: string;
+  summary: string;
+  raw?: unknown;
+};
+
 export const IMMUTABLE_INTENT_FIELDS = [
   "label",
   "resource",
