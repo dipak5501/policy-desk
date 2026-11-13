@@ -1,122 +1,102 @@
-# Team split — Day 1–5 (→ Fri Nov 20, 12:00 PM CST)
+# Team split — Day 1–5 (judge-aligned workflow)
 
-Three working engineers with complementary specialties shipping a production-minded prototype. Clear RACI, parallel streams, daily DoD.
+Three working engineers shipping the **one complete research-agent workflow** agreed by simulated judges ([JUDGE-REVIEW.md](./JUDGE-REVIEW.md)). Clear RACI, parallel streams, daily DoD.
+
+> Delivery order: baseline → payment correctness → agent workflow → UI/evidence → optional Streams.
 
 ## Roster
 
 | Engineer | GitHub | Discipline | Accountable for |
 |---|---|---|---|
-| **Dipak Yadav** | [@dipak5501](https://github.com/dipak5501) | Full-stack developer · product/engineering lead | Desk UX, API glue, demo script, Devpost, merge cadence, judge path |
-| **Utkarsh Lubal** | [@ubiiii](https://github.com/ubiiii) | Cybersecurity engineer | Threat model, operator auth, adversarial tests, audit integrity, public-demo hardening |
-| **Kashif Manzer** | [@KashifManzer](https://github.com/KashifManzer) | Blockchain engineer | Solana Devnet USDC, Phantom settle, x402 exact verify, RPC/Streams, explorer receipts |
+| **Dipak Yadav** | [@dipak5501](https://github.com/dipak5501) | Full-stack developer · product/engineering lead | Task timeline UX, catalog/preview UI, approval card, receipt/answer surface, demo script, Devpost, merge cadence |
+| **Utkarsh Lubal** | [@ubiiii](https://github.com/ubiiii) | Cybersecurity engineer | Threat model, operator auth, adversarial suite, security demo evidence, audit honesty, policy claim accuracy |
+| **Kashif Manzer** | [@KashifManzer](https://github.com/KashifManzer) | Blockchain engineer | Intent binding, TransferChecked template validation, atomic budgets, idempotent settle/confirm, x402 delivery gate, Streams (if claimed) |
 
-**RACI shorthand:** Dipak = **A** on product demo · Kashif = **A** on chain settle · Utkarsh = **A** on security claims · each is **C** on the others’ P0 merges.
-
-Calendar context: hacking window open; **hard stop Fri Nov 20 12:00 PM CST**. Days below are build days with a submit morning buffer.
+**RACI:** Dipak = **A** on product demo · Kashif = **A** on chain settle · Utkarsh = **A** on security claims · each is **C** on the others’ P0 merges.
 
 | Day | Date (2026) | Theme |
 |---|---|---|
-| 1 | Sat Nov 15 | Lock killer path + P0 gaps |
-| 2 | Sun Nov 16 | Chain + x402 harden |
-| 3 | Mon Nov 17 | Security pass + adversarial |
-| 4 | Tue Nov 18 | Streams (if claiming) + polish |
-| 5 | Wed Nov 19 → Thu Nov 20 AM | Pitch, video, Devpost, submit by noon CST Fri |
+| 1 | Sat Nov 15 | Verified baseline + gap list vs 12 steps |
+| 2 | Sun Nov 16 | Payment correctness + security foundation |
+| 3 | Mon Nov 17 | Useful agent workflow (block→recover→approve→answer) |
+| 4 | Tue Nov 18 | UI/evidence polish; Streams only if core green |
+| 5 | Wed Nov 19 → Thu Nov 20 AM | Pitch, video, Devpost; submit by noon CST Fri |
 
 *(If the team works Fri Nov 14, treat it as Day 1 early start; do not slip Day 5.)*
 
 ---
 
-## Day 1 — Lock the killer path
+## Day 1 — Verified baseline
 
 **Parallel**
 
 | Stream | Owner | Work |
 |---|---|---|
-| Full-stack | Dipak | Cold-run 90s script; fix UI blockers on approve/progress/receipt; ResourceStrip + trust strip accurate |
-| Blockchain | Kashif | Verify Devnet mint, balances API, prepare simulate, confirm TransferChecked on happy path |
-| Security | Utkarsh | Draft/expand [THREAT-MODEL.md](./THREAT-MODEL.md); confirm operator fail-closed; list attack cases for Day 3 |
-
-**Handoffs**
-
-- Kashif → Dipak: prepare/confirm error shapes for UI.  
-- Utkarsh → both: “never claim X” list for README/pitch.
+| Full-stack | Dipak | Map current UI to 12 demo steps; cold-run existing block/approve/settle; list gaps; keep trust strip accurate |
+| Blockchain | Kashif | Verify Devnet mint, balances, prepare simulate, confirm TransferChecked happy path; note template-validation gaps |
+| Security | Utkarsh | Baseline adversarial run; expand [THREAT-MODEL.md](./THREAT-MODEL.md) honesty notes; operator fail-closed check |
 
 **DoD**
 
-- [ ] Blocked merchant demo: no Phantom prompt.  
-- [ ] Approval demo reaches Approve widget.  
-- [ ] One successful settle + explorer link on Devnet.  
-- [ ] `npm test` + `npm run build` green.
+- [ ] Written baseline: verified / partial / mocked / documented-missing (no invented results).  
+- [ ] Gap list mapped to P0 IDs in [FEATURE-BACKLOG.md](./FEATURE-BACKLOG.md).  
+- [ ] `npm test` + `npm run build` green on current main.
 
 ---
 
-## Day 2 — Solana + x402 reliability
+## Day 2 — Payment correctness + security
 
 **Parallel**
 
 | Stream | Owner | Work |
 |---|---|---|
-| Blockchain | Kashif | x402 weather under + above threshold; seller exact verify; fee/USDC insufficient paths |
-| Full-stack | Dipak | Wire failure copy; guided “Run 90s demo” stable; tunnel script documented |
-| Security | Utkarsh | Review settle/confirm for signature-only / intent mutation gaps; ticket any P0 holes |
-
-**Handoffs**
-
-- Kashif → Dipak: x402 resume payload contract for UI.  
-- Utkarsh → Kashif: must-fix confirm cases before Day 3 suite.
+| Blockchain | Kashif | Intent binding fields; full instruction-template validation; atomic reservation concurrency; idempotent retry/reconcile; settle-before-delivery gate |
+| Security | Utkarsh | Tests: wrong mint/amount/recipient/network; extra instructions; approval mismatch; replay; concurrent budget; duplicate prepare/confirm |
+| Full-stack | Dipak | Surface reservation/budget states; never optimistic “paid” before confirm; error states for reject/timeout/unknown |
 
 **DoD**
 
-- [ ] x402 quote → pay → resume twice cold.  
-- [ ] Above-threshold x402 requires approval.  
-- [ ] Insufficient SOL/USDC fails before sign with clear UI.  
-- [ ] No mainnet config possible (devnet lock holds).
+- [ ] Concurrent requests cannot exceed remaining budget.  
+- [ ] Malicious extra-instruction txs rejected.  
+- [ ] Timeout path reconciles before re-prepare.  
+- [ ] Security demo steps 1–3 (unauthorized, tamper, concurrent) show real outcomes.
 
 ---
 
-## Day 3 — Security engineering day
+## Day 3 — Useful agent workflow
 
 **Parallel**
 
 | Stream | Owner | Work |
 |---|---|---|
-| Security | Utkarsh | Expand `lib/security/adversarial.test.ts`; finalize THREAT-MODEL guarantees vs limitations; webhook secret guidance |
-| Blockchain | Kashif | Implement Utkarsh’s confirm/prepare fixes; private RPC in `.env.local` |
-| Full-stack | Dipak | Surface audit/decision text for judges; remove any overclaim copy |
-
-**Handoffs**
-
-- Utkarsh → Kashif: failing tests first (red), then green together.  
-- Dipak → Utkarsh: public tunnel threat notes for threat model “limitations”.
+| Full-stack | Dipak | Task-first timeline; catalog preview; block→recover UX; approval card in timeline; answer + receipt after delivery |
+| Blockchain | Kashif | Small approved resource catalog + merchant wallet; quote expiry; x402/resource delivery after confirm |
+| Security | Utkarsh | Visible rejection reasons; fixture vs live labeling; operator credentials never exposed to agent path |
 
 **DoD**
 
-- [ ] Adversarial suite covers: non-allowlist block, wrong mint, over cap, signature-only reject.  
-- [ ] THREAT-MODEL.md reviewed by all three.  
-- [ ] Operator token rotation note for public demo.
+- [ ] Steps 1–12 runnable (fixture mode OK if labeled).  
+- [ ] Blocked request never materializes a signable tx.  
+- [ ] Above-threshold requires operator Approve before Phantom.  
+- [ ] Final answer uses purchased content; receipt fields filled.
 
 ---
 
-## Day 4 — Streams (optional bounty) + polish
+## Day 4 — Interface, evidence, optional Streams
 
 **Parallel**
 
 | Stream | Owner | Work |
 |---|---|---|
-| Blockchain | Kashif | Configure QuickNode Stream → `/api/streams/webhook`; prove LIVE `stream` tick **or** formally drop bounty claim |
-| Full-stack | Dipak | Visual polish only on the killer path; backup screen recording |
-| Security | Utkarsh | Webhook auth review; rate/abuse notes; final “honest guarantees” pass on pitch kit language |
-
-**Handoffs**
-
-- Kashif → Dipak: one Streams screenshot/GIF for Devpost.  
-- If Streams slips: Dipak removes bounty claim from pitch; no half-claims.
+| Full-stack | Dipak | Expandable inspection views; loading/empty/approval/signing/rejected/failed/confirming/unknown/paid-pending/completed; backup recording |
+| Blockchain | Kashif | Streams **only if** core green: auth, dedupe, reconcile known payments — else formally drop bounty claim |
+| Security | Utkarsh | Finalize 4-step security demo; audit-honesty language; webhook secret review if Streams claimed |
 
 **DoD**
 
-- [ ] Either Streams live end-to-end **or** bounty deselected everywhere.  
-- [ ] Full 90s path recorded as backup.  
-- [ ] Docs links from README all resolve.
+- [ ] Security demo step 4 (legitimate success) + full adversarial suite green.  
+- [ ] Streams live end-to-end **or** bounty deselected everywhere.  
+- [ ] Full 90s path recorded as backup.
 
 ---
 
@@ -126,23 +106,17 @@ Calendar context: hacking window open; **hard stop Fri Nov 20 12:00 PM CST**. Da
 
 | Stream | Owner | Work |
 |---|---|---|
-| Lead | Dipak | Devpost writeup, video edit, repo public flip before submit, final README, live URL |
-| Blockchain | Kashif | Pre-flight faucet balances; RPC health; settle smoke 30 min before judging/submit |
+| Lead | Dipak | Devpost writeup, video edit, repo public flip, final README, live URL |
+| Blockchain | Kashif | Pre-flight faucet balances; RPC health; settle smoke 30 min before submit |
 | Security | Utkarsh | Final threat-model quote for Devpost; rotate demo operator token if URL is public |
 
 **Submit checklist**
 
 - [ ] Devpost artifact = **policy-desk only** (not prep GAT).  
 - [ ] Tracks: Agentic Payments and AI + Best use of Solana (+ Streams only if live).  
-- [ ] Video ≤3 min covering block → approve → settle → receipt.  
+- [ ] Video ≤3 min: task → block/recover → approve → settle → answer → receipt.  
 - [ ] Repo public (or per organizer rule) at submit time.  
 - [ ] Hard stop: **Fri Nov 20, 12:00 PM CST**.
-
-**DoD**
-
-- [ ] Submission uploaded and confirmed.  
-- [ ] Team handles listed accurately (Dipak / Utkarsh / Kashif + GitHubs).  
-- [ ] One spare laptop/browser with Phantom Devnet funded.
 
 ---
 
@@ -150,12 +124,13 @@ Calendar context: hacking window open; **hard stop Fri Nov 20 12:00 PM CST**. Da
 
 | Engineer | Next actions |
 |---|---|
-| **Dipak** | Own Day 1 cold 90s runs; close UI gaps on approval → receipt; keep docs ↔ product aligned; schedule Devpost draft |
-| **Utkarsh** | Own [THREAT-MODEL.md](./THREAT-MODEL.md); enumerate adversarial cases; verify operator fail-closed on approvals API |
-| **Kashif** | Own Devnet settle + x402 exact path; set private RPC; Streams config decision by end of Day 4 |
+| **Dipak** | Own task-timeline UX plan from 12 steps; keep docs ↔ product aligned; schedule Devpost draft |
+| **Utkarsh** | Own adversarial expansion + security demo script; audit honesty in pitch language |
+| **Kashif** | Own payment correctness (template validation, budgets, idempotent settle); Streams decision after core |
 
 ## Communication
 
 - Merge through Dipak unless hotfix on chain/security.  
 - No scope adds without cutting something from [FEATURE-BACKLOG.md](./FEATURE-BACKLOG.md) P0.  
-- Overclaim ban: if it is not enforced in code + tests, it is not in the pitch.
+- Overclaim ban: if it is not enforced in code + tests, it is not in the pitch.  
+- This doc revision is planning-only until the implementation pass.

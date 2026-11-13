@@ -1,83 +1,105 @@
-# Architecture — Policy Desk
+# Architecture — Policy Desk (judge-aligned)
 
-Policy-gated Solana Devnet USDC spending for AI agents. Settlement is **non-custodial**: Phantom holds keys; the desk decides whether a spend may be prepared and confirmed.
+Policy-gated Solana Devnet USDC spending for a **research agent** that buys useful data. Settlement is **non-custodial**: Phantom holds keys; the desk decides whether a spend may be prepared, confirmed, and fulfilled.
 
-## End-to-end flow
+> Target workflow: task + budget → preview → propose → policy → block/recover or approve → sign → **confirm settle** → deliver content → answer + receipt.  
+> Detail: [JUDGE-REVIEW.md](./JUDGE-REVIEW.md) · [WIN-PLAN.md](./WIN-PLAN.md).
+
+## End-to-end research-agent flow
 
 ```
-┌─────────────┐     ┌──────────────────┐     ┌────────────────────┐
-│ Agent       │────▶│ Policy engine    │────▶│ Ledger + audit     │
-│ propose     │     │ allow|block|     │     │ immutable intent   │
-│ /api/agent  │     │ needs_approval   │     │                    │
-└─────────────┘     └────────┬─────────┘     └─────────┬──────────┘
-                             │                         │
-                             ▼                         │
-                    ┌────────────────┐                 │
-                    │ Human approve  │  (if threshold) │
-                    │ /api/approvals │                 │
-                    └────────┬───────┘                 │
-                             ▼                         │
-                    ┌────────────────┐                 │
-                    │ settle/prepare │◀────────────────┘
-                    │ re-check +     │
-                    │ simulate       │
-                    └────────┬───────┘
-                             ▼
-                    ┌────────────────┐     ┌─────────────────────┐
-                    │ Phantom sign   │────▶│ settle/confirm      │
-                    │ (wallet)       │     │ TransferChecked /   │
-                    └────────────────┘     │ x402 seller verify  │
-                                           └──────────┬──────────┘
-                                                      ▼
-                                           ┌─────────────────────┐
-                                           │ Receipt + explorer  │
-                                           │ (+ optional Streams)│
-                                           └─────────────────────┘
+┌──────────────┐    ┌─────────────────┐    ┌──────────────────┐
+│ User task +  │───▶│ Catalog preview │───▶│ Agent request    │
+│ USDC budget  │    │ (free metadata) │    │ resource via API │
+└──────────────┘    └─────────────────┘    └────────┬─────────┘
+                                                     ▼
+                                            ┌──────────────────┐
+                                            │ Policy engine    │
+                                            │ allow|block|     │
+                                            │ needs_approval   │
+                                            └────────┬─────────┘
+                     ┌───────────────────────────────┼─────────────────────────┐
+                     ▼                               ▼                         ▼
+              ┌─────────────┐              ┌────────────────┐         ┌──────────────┐
+              │ BLOCK +     │              │ Human approve  │         │ allow        │
+              │ recover to  │              │ (SeaPay card)  │         │ (under thr.) │
+              │ alt resource│              └───────┬────────┘         └──────┬───────┘
+              └─────────────┘                      ▼                         │
+                                          ┌────────────────┐                 │
+                                          │ settle/prepare │◀────────────────┘
+                                          │ re-check +     │
+                                          │ simulate +     │
+                                          │ template valid │
+                                          └────────┬───────┘
+                                                   ▼
+                                          ┌────────────────┐
+                                          │ Phantom sign   │
+                                          └────────┬───────┘
+                                                   ▼
+                                          ┌────────────────┐     ┌─────────────────────┐
+                                          │ settle/confirm │────▶│ Deliver resource    │
+                                          │ + reconcile    │     │ then agent answer   │
+                                          └────────────────┘     │ + structured receipt│
+                                                                 └─────────────────────┘
 ```
 
 ### State machine (payment)
 
-`proposed → blocked | pending_approval | approved | ready_to_sign → confirming → settled`  
-(plus `rejected` / failed paths). UI `PaymentProgress` mirrors these states for judges.
+`proposed → blocked | pending_approval | approved | ready_to_sign → confirming → settled → fulfilled`  
+(plus `rejected` / failed / `unknown` / `paid_delivery_pending` paths).  
+Never show optimistic success for unconfirmed payments.
 
-### x402 branch
+### Signing honesty (five layers)
+
+| Layer | Meaning |
+|---|---|
+| Policy authorization | Server rules allow this intent |
+| Operator approval | Human gate above threshold (if required) |
+| Wallet signature | Phantom signs prepared bytes |
+| On-chain confirmation | Tx succeeded at documented commitment |
+| Resource delivery | Paid content released; answer may use it |
+
+Under-threshold ≠ autonomous settlement if Phantom still signs.
+
+### x402 / paid-resource branch
 
 ```
-GET/POST /api/x402/weather
-  → 402 + PAYMENT-* challenge (quote)
+resource quote (expiry + exact base units)
   → policy + prepare + Phantom sign
-  → seller verifies exact amount/mint/payTo/transfer shape
-  → resume with resource body
+  → confirm settlement (idempotent / reconcile)
+  → deliver body / digest
+  → resume agent answer
 ```
 
 CAIP-2 network: `solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1` (Devnet). Mint: Circle Devnet USDC `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`.
 
-## Module map
+## Module map (current + target)
 
 | Layer | Path | Responsibility |
 |---|---|---|
-| Desk UI | `app/page.tsx`, `components/*` | Connect wallet, scenarios, approval widget, progress, receipts, resource strip |
-| Propose | `app/api/agent/propose` | Scenario/custom spend → `reviewSpend` → ledger entry |
-| Policy | `lib/policy/*` | Caps, allowlists, mint, pause, approval threshold, regime labels |
-| Approvals | `app/api/approvals/[id]` | Operator-gated approve/reject |
-| Settle | `app/api/settle/prepare`, `confirm` | Re-check policy, simulate, bind prepareId; verify + broadcast |
-| Solana | `lib/solana/*` | Connection, balances, TransferChecked build/validate |
-| x402 | `lib/x402/*`, `app/api/x402/weather` | Quote, seller self-facilitate, resume |
-| Ledger | `lib/ledger/store` | Durable `.data/ledger.json` + status transitions |
-| Audit | `lib/security/audit` | Append-only `.data/audit.jsonl` |
-| Streams | `app/api/streams/webhook` | Optional QuickNode ingest → LIVE ticker |
-| Operator | `lib/security/operator` | Shared-secret gate (`OPERATOR_TOKEN`) |
+| Desk UI | `app/page.tsx`, `components/*` | Task timeline, catalog preview, approval card, progress, receipts, resource strip |
+| Propose / task | `app/api/agent/*` | Task + resource request → `reviewSpend` → ledger intent |
+| Policy | `lib/policy/*` | Caps, allowlists, mint, pause, approval threshold, regime → real rules |
+| Catalog | *(target)* server-side approved resources | Schema-validated resource IDs; merchants; previews; prices |
+| Approvals | `app/api/approvals/[id]` | Operator-gated approve/reject bound to intent |
+| Settle | `app/api/settle/prepare`, `confirm` | Re-check policy, simulate, template validate, bind prepareId; verify + broadcast + reconcile |
+| Solana | `lib/solana/*` | Connection, balances, TransferChecked build/**full template** validate |
+| x402 / delivery | `lib/x402/*`, resource routes | Quote, seller verify, settle-before-deliver, retry fulfillment without re-charge |
+| Ledger / budget | `lib/ledger/store` | Durable `.data/ledger.json`; atomic reservations; concurrency model documented |
+| Audit | `lib/security/audit` | Append-only `.data/audit.jsonl` (server-controlled — not on-chain immutability) |
+| Streams | `app/api/streams/webhook` | Optional reconcile / unmatched-transfer flags (not ticker theater) |
+| Operator | `lib/security/operator` | Shared-secret gate (`OPERATOR_TOKEN`); never exposed to agent |
 
 ## Trust boundaries
 
 ```
 [Untrusted]
-  Browser UI · agent/scenario text · seller HTTP body · Streams webhook JSON
+  Browser UI · model/agent text · seller HTTP · Streams webhook JSON · fixture scripts
         │
         ▼
 [Trusted desk server]
-  reviewSpend · ledger intentHash · prepare re-check · confirm decode
-  Operator token required for approve/reject
+  catalog resolve · reviewSpend · intent bind · prepare re-check · template validate
+  confirm / reconcile · delivery gate · Operator token for approve/reject
         │
         ▼
 [Wallet boundary]
@@ -92,12 +114,23 @@ CAIP-2 network: `solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1` (Devnet). Mint: Circle
 
 | Boundary | Rule |
 |---|---|
-| Model → policy | Scenario/agent text never sets caps, mint, or allowlists |
+| Model → policy | Agent text never sets caps, mint, allowlists, operator creds, or arbitrary RPC/merchant URLs |
 | Browser → approvals | `x-operator-token` / Bearer must match `OPERATOR_TOKEN` (fail closed if unset) |
-| Browser → settle | Prepare re-runs policy + destination binding; confirm validates TransferChecked |
-| Seller → desk | x402 seller checks amount, mint, payTo, signed transfer shape |
-| Webhook → ledger | Streams verifies shared secret when configured; otherwise acknowledge-only |
+| Browser → settle | Prepare re-runs policy + destination binding; confirm validates **full** permitted template |
+| Seller → desk | Exact amount, mint, payTo, signed transfer shape; delivery only after confirm |
+| Webhook → ledger | Streams verifies provider auth when configured; dedupe; else do not claim bounty |
 | Config → cluster | Devnet lock — refuse mainnet RPC/cluster configuration |
+
+## Security foundation (architecture requirements)
+
+1. **Server policy** — only path to materialize a payment.  
+2. **Intent binding** — wallet, task, resource, merchant, network, mint, base-unit amount, quote expiry, policy version.  
+3. **Integer base units** — no float money math.  
+4. **Atomic budgets** — concurrent requests cannot exceed remaining; release once; uncertain stays reserved until reconciled.  
+5. **Template validation** — entire tx vs allowlisted instruction set (not “find one TransferChecked”).  
+6. **Idempotent retries** — reconcile before replace; timeout ≠ failure.  
+7. **Settle before fulfill** — delivery retries do not re-charge.  
+8. **No vault this build** — block-before-sign; sponsorship optional later.
 
 ## Devnet USDC
 
@@ -112,15 +145,19 @@ CAIP-2 network: `solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1` (Devnet). Mint: Circle
 
 ## Design choices (production-minded prototype)
 
-1. **Block before sign** — no Anchor escrow PDA in this build; honesty over theater.
-2. **Immutable intent** — payee / amount / mint / resource bound at create (`intentHash`).
-3. **Double policy check** — propose and prepare both call `reviewSpend`.
-4. **Budget reservation** — pending / approved / ready_to_sign / confirming / settled count toward daily cap.
-5. **Single-process ledger** — fine for hackathon demo; not multi-region HA (documented in threat model).
+1. **Block before sign** — vault deferred; honesty over custody theater.  
+2. **One research workflow** — small catalog beats marketplace.  
+3. **Fixture mode labeled** — reliable demos without faking live models.  
+4. **Double policy check** — propose and prepare both call `reviewSpend`.  
+5. **Audit honesty** — local append-only ≠ independently immutable on-chain trail.  
+6. **Single-process ledger** — fine for hackathon demo; concurrency model must still be defined and tested.
 
 ## Related docs
 
+- [JUDGE-REVIEW.md](./JUDGE-REVIEW.md) — simulated panel decisions  
 - [WIN-PLAN.md](./WIN-PLAN.md) — demo path and non-goals  
+- [FEATURE-BACKLOG.md](./FEATURE-BACKLOG.md) — P0 rewritten to judges  
+- [TEAM-SPLIT.md](./TEAM-SPLIT.md) — 5-day execution  
 - [THREAT-MODEL.md](./THREAT-MODEL.md) — guarantees and limitations  
-- [STREAMS.md](./STREAMS.md) — optional QuickNode bounty wiring  
+- [STREAMS.md](./STREAMS.md) — optional QuickNode wiring  
 - [ORGANIZER-RESOURCES.md](./ORGANIZER-RESOURCES.md) — sponsor links and status  
