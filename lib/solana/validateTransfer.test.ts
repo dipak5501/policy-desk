@@ -9,15 +9,20 @@ import {
 } from "@solana/spl-token";
 import { Keypair, PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
 import { DEVNET_USDC_MINT } from "./config";
-import { validateSignedUsdcTransfer } from "./validateTransfer";
+import {
+  assertSignedMatchesPrepared,
+  validateSignedUsdcTransfer,
+} from "./validateTransfer";
 
 function buildOkTx(from: Keypair, to: PublicKey, amount: bigint): Transaction {
   const mint = new PublicKey(DEVNET_USDC_MINT);
   const fromAta = getAssociatedTokenAddressSync(mint, from.publicKey);
   const toAta = getAssociatedTokenAddressSync(mint, to);
+  // PublicKey bytes are valid base58 blockhash stand-ins for unit tests
+  const blockhash = Keypair.generate().publicKey.toBase58();
   const tx = new Transaction({
     feePayer: from.publicKey,
-    blockhash: "EkSnNWid2cvwEVnVx9aBqawnmiCNiDgp3gUql2qtLv65",
+    blockhash,
     lastValidBlockHeight: 100,
   }).add(
     createAssociatedTokenAccountIdempotentInstruction(
@@ -98,4 +103,25 @@ describe("validateSignedUsdcTransfer", () => {
     });
     assert.equal(result.ok, false);
   });
+
+  it("binds signed message to preparedTxBase64", () => {
+    const prepared = buildOkTx(from, to, amount);
+    const preparedB64 = prepared
+      .serialize({ requireAllSignatures: false, verifySignatures: false })
+      .toString("base64");
+    const signed = Transaction.from(Buffer.from(preparedB64, "base64"));
+    signed.partialSign(from);
+    const match = assertSignedMatchesPrepared(signed, preparedB64);
+    assert.equal(match.ok, true);
+
+    const other = buildOkTx(from, Keypair.generate().publicKey, amount);
+    const mismatch = assertSignedMatchesPrepared(
+      signed,
+      other
+        .serialize({ requireAllSignatures: false, verifySignatures: false })
+        .toString("base64"),
+    );
+    assert.equal(mismatch.ok, false);
+  });
 });
+

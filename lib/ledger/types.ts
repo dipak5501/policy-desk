@@ -107,6 +107,18 @@ export type TimelineEvent = {
   meta?: Record<string, unknown>;
 };
 
+export type LiveAgentProgress = {
+  messages: Array<{
+    role: "system" | "user" | "assistant" | "tool";
+    content: string;
+    tool?: string;
+  }>;
+  toolCallCount: number;
+  pauseReason?: "approval" | "payment";
+  pendingEntryId?: string;
+  status: "running" | "paused" | "completed" | "failed";
+};
+
 export type ResearchTask = {
   id: string;
   createdAt: string;
@@ -128,6 +140,8 @@ export type ResearchTask = {
   answer?: string;
   lastEntryId?: string;
   contentDigest?: string;
+  /** Persisted live-adapter conversation / pause state. */
+  liveProgress?: LiveAgentProgress;
 };
 
 export const IMMUTABLE_INTENT_FIELDS = [

@@ -16,6 +16,7 @@ import { ReceiptCard } from "./ReceiptCard";
 import { EventTicker } from "./EventTicker";
 import { ResourceStrip } from "./ResourceStrip";
 import { approveEntry, settleEntry } from "./settle";
+import { csrfHeaders, setCsrfToken } from "./csrfStore";
 
 type PolicyPayload = {
   policy: {
@@ -89,7 +90,7 @@ function DeskInner() {
   const [operatorPassword, setOperatorPassword] = useState("");
 
   const refresh = useCallback(async () => {
-    const [p, l, c, streams, op] = await Promise.all([
+    const [p, l, c, streams, op, walletSession] = await Promise.all([
       fetch("/api/policy").then((r) => r.json()),
       fetch("/api/ledger", { credentials: "include" }).then((r) => r.json()),
       fetch("/api/catalog").then((r) => r.json()),
@@ -98,9 +99,17 @@ function DeskInner() {
         .catch(() => ({ events: [] })),
       fetch("/api/operator/session", { credentials: "include" })
         .then((r) => r.json())
-        .catch(() => ({ authenticated: false })),
+        .catch(() => ({ authenticated: false, csrf: null })),
+      fetch("/api/wallet/session", { credentials: "include" })
+        .then((r) => r.json())
+        .catch(() => ({ authenticated: false, csrf: null })),
     ]);
     setOperatorAuthed(Boolean(op.authenticated));
+    // Prefer freshest CSRF from authenticated sessions (never document.cookie)
+    if (typeof op.csrf === "string" && op.csrf) setCsrfToken(op.csrf);
+    else if (typeof walletSession.csrf === "string" && walletSession.csrf) {
+      setCsrfToken(walletSession.csrf);
+    }
     setPolicy(p);
     setEntries(l.entries ?? []);
     setAudit(l.audit ?? p.audit ?? []);
@@ -125,13 +134,6 @@ function DeskInner() {
     return () => clearInterval(t);
   }, [refresh]);
 
-  function csrfHeaders(): HeadersInit {
-    if (typeof document === "undefined") return {};
-    const match = document.cookie.match(/(?:^|; )pd_csrf=([^;]*)/);
-    const csrf = match?.[1] ? decodeURIComponent(match[1]) : "";
-    return csrf ? { "x-csrf-token": csrf } : {};
-  }
-
   async function operatorLogin() {
     setBusy(true);
     setError(null);
@@ -146,6 +148,7 @@ function DeskInner() {
       if (!res.ok) throw new Error(data.error ?? "Operator login failed");
       setOperatorAuthed(true);
       setOperatorPassword("");
+      if (typeof data.csrf === "string") setCsrfToken(data.csrf);
       setMessage("Operator session active (HttpOnly cookie).");
       await refresh();
     } catch (err) {

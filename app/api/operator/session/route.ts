@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   operatorConfigured,
-  parseCookies,
-  readOperatorSession,
-  COOKIE_CSRF,
+  readOperatorSessionDetails,
 } from "@/lib/security/session";
 
 export const runtime = "nodejs";
@@ -14,12 +12,13 @@ export async function GET(request: Request) {
     return NextResponse.json({
       authenticated: false,
       configured: false,
+      csrf: null,
     });
   }
-  const cookies = parseCookies(request);
+  const session = readOperatorSessionDetails(request);
   return NextResponse.json({
-    authenticated: readOperatorSession(request),
+    authenticated: Boolean(session),
     configured: true,
-    csrf: cookies[COOKIE_CSRF] ?? null,
+    csrf: session?.csrf ?? null,
   });
 }

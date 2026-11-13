@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import bs58 from "bs58";
+import { setCsrfToken } from "./csrfStore";
 
 type PhantomProvider = {
   isPhantom?: boolean;
@@ -65,6 +66,21 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setInstalled(Boolean(p));
     setReady(true);
     if (p?.publicKey) setAddress(p.publicKey.toString());
+
+    // Restore CSRF from HttpOnly session after reload (never via document.cookie)
+    void fetch("/api/wallet/session", { credentials: "include" })
+      .then((r) => r.json())
+      .then((data: { authenticated?: boolean; wallet?: string; csrf?: string }) => {
+        if (data.authenticated && data.csrf) {
+          setSessionReady(true);
+          setCsrf(data.csrf);
+          setCsrfToken(data.csrf);
+          if (data.wallet) setAddress(data.wallet);
+        }
+      })
+      .catch(() => {
+        /* ignore */
+      });
   }, []);
 
   const ensureSession = useCallback(async () => {
@@ -98,6 +114,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     if (!verify.ok) throw new Error(verify.error ?? "Wallet auth failed");
     setSessionReady(true);
     setCsrf(verify.csrf ?? null);
+    setCsrfToken(verify.csrf ?? null);
     return verify.csrf as string;
   }, [address]);
 
@@ -121,6 +138,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setAddress(null);
     setSessionReady(false);
     setCsrf(null);
+    setCsrfToken(null);
     await fetch("/api/operator/logout", { method: "POST", credentials: "include" });
   }, []);
 
