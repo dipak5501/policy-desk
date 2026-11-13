@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "node --import tsx --test lib/policy/review.test.ts lib/policy/regime.test.ts lib/ledger/store.test.ts lib/security/adversarial.test.ts",
+    "test": "node --import tsx --test lib/policy/review.test.ts lib/policy/regime.test.ts lib/ledger/store.test.ts lib/security/adversarial.test.ts lib/solana/validateTransfer.test.ts",
     "typecheck": "tsc --noEmit",
     "tunnel": "bash scripts/tunnel.sh start",
     "tunnel:refresh": "bash scripts/tunnel.sh refresh",

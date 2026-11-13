@@ -1,5 +1,10 @@
+import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-import { getLedgerEntry, setLedgerStatus } from "@/lib/ledger/store";
+import {
+  getLedgerEntry,
+  setLedgerStatus,
+  syncTaskBudgetFromLedger,
+} from "@/lib/ledger/store";
 import { assertOperator } from "@/lib/security/operator";
 import { appendAudit } from "@/lib/security/audit";
 
@@ -8,6 +13,8 @@ export const dynamic = "force-dynamic";
 
 type Body = {
   action?: "approve" | "reject" | "cancel";
+  /** Client must echo intentHash so approval cannot apply to a mutated intent. */
+  intentHash?: string;
 };
 
 export async function POST(
@@ -36,14 +43,43 @@ export async function POST(
       );
     }
 
+    if (
+      entry.approvalExpiresAt &&
+      Date.parse(entry.approvalExpiresAt) < Date.now()
+    ) {
+      const expired = setLedgerStatus(id, "failed", {
+        error: "Approval window expired",
+        settlementKind: "none",
+      });
+      if (entry.taskId) syncTaskBudgetFromLedger(entry.taskId);
+      return NextResponse.json(
+        { error: "Approval window expired", entry: expired },
+        { status: 410 },
+      );
+    }
+
+    if (body.intentHash && entry.intentHash && body.intentHash !== entry.intentHash) {
+      return NextResponse.json(
+        { error: "intentHash mismatch — approval does not bind to this intent" },
+        { status: 409 },
+      );
+    }
+
     const action = body.action ?? "approve";
     if (action === "approve") {
+      const approvalId = randomUUID();
       const approved = setLedgerStatus(id, "approved", {
         policyStatus: "allow",
         policyReason: "Human operator approved",
+        approvalId,
       });
-      appendAudit("approval.approve", { entryId: id });
-      return NextResponse.json({ entry: approved, next: "settle" });
+      appendAudit("approval.approve", {
+        entryId: id,
+        approvalId,
+        intentHash: entry.intentHash,
+      });
+      if (entry.taskId) syncTaskBudgetFromLedger(entry.taskId);
+      return NextResponse.json({ entry: approved, next: "settle", approvalId });
     }
 
     if (action === "cancel") {
@@ -52,6 +88,7 @@ export async function POST(
         error: "Cancelled by operator",
       });
       appendAudit("approval.cancel", { entryId: id });
+      if (entry.taskId) syncTaskBudgetFromLedger(entry.taskId);
       return NextResponse.json({ entry: cancelled, next: "none" });
     }
 
@@ -60,6 +97,7 @@ export async function POST(
       error: "Rejected by operator",
     });
     appendAudit("approval.reject", { entryId: id });
+    if (entry.taskId) syncTaskBudgetFromLedger(entry.taskId);
     return NextResponse.json({ entry: rejected, next: "none" });
   } catch (err) {
     return NextResponse.json(

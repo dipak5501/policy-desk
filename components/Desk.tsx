@@ -1,8 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { LedgerEntry, StreamEvent } from "@/lib/ledger/types";
-import type { AgentProposal } from "@/lib/agent/scenarios";
+import type {
+  LedgerEntry,
+  ResearchTask,
+  StreamEvent,
+} from "@/lib/ledger/types";
+import type { CatalogResource } from "@/lib/catalog/resources";
 import { formatSol, formatUsdc, shortKey } from "@/lib/format";
 import { WalletProvider, useWallet } from "./WalletProvider";
 import { TrustStrip } from "./TrustStrip";
@@ -23,6 +27,14 @@ type PolicyPayload = {
     allowedMint: string;
     paused: boolean;
   };
+  budget?: {
+    availableBaseUnits: string;
+    reservedBaseUnits: string;
+    confirmedBaseUnits: string;
+    remainingBaseUnits: string;
+    dailyCapBaseUnits: string;
+  };
+  policyVersion?: string;
   dailySpentBaseUnits: string;
   regime: {
     label: string;
@@ -30,13 +42,20 @@ type PolicyPayload = {
     explain: string;
     remainingBaseUnits: string;
   };
-  audit: Array<{ ts: string; kind: string; entryId?: string; detail?: Record<string, unknown> }>;
+  audit: Array<{
+    ts: string;
+    kind: string;
+    entryId?: string;
+    detail?: Record<string, unknown>;
+  }>;
   trust: {
     cluster: string;
     mint: string;
     blockBeforeSign: boolean;
     escrowClaim: boolean;
     escrowNote: string;
+    streamsReconcile?: boolean;
+    streamsNote?: string;
   };
 };
 
@@ -55,7 +74,12 @@ function DeskInner() {
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [streamEvents, setStreamEvents] = useState<StreamEvent[]>([]);
   const [audit, setAudit] = useState<PolicyPayload["audit"]>([]);
-  const [scenarios, setScenarios] = useState<AgentProposal[]>([]);
+  const [catalog, setCatalog] = useState<CatalogResource[]>([]);
+  const [task, setTask] = useState<ResearchTask | null>(null);
+  const [budgetInput, setBudgetInput] = useState("1000000");
+  const [promptInput, setPromptInput] = useState(
+    "Summarize Devnet weather using a paid research brief within budget.",
+  );
   const [focus, setFocus] = useState<LedgerEntry | null>(null);
   const [receipt, setReceipt] = useState<LedgerEntry | null>(null);
   const [busy, setBusy] = useState(false);
@@ -66,17 +90,23 @@ function DeskInner() {
     process.env.NEXT_PUBLIC_OPERATOR_TOKEN ?? "policy-desk-dev-operator";
 
   const refresh = useCallback(async () => {
-    const [p, l, s, streams] = await Promise.all([
+    const [p, l, c, streams] = await Promise.all([
       fetch("/api/policy").then((r) => r.json()),
       fetch("/api/ledger").then((r) => r.json()),
-      fetch("/api/agent/propose").then((r) => r.json()),
-      fetch("/api/streams/webhook").then((r) => r.json()).catch(() => ({ events: [] })),
+      fetch("/api/catalog").then((r) => r.json()),
+      fetch("/api/streams/webhook")
+        .then((r) => r.json())
+        .catch(() => ({ events: [] })),
     ]);
     setPolicy(p);
     setEntries(l.entries ?? []);
     setAudit(l.audit ?? p.audit ?? []);
-    setScenarios(s.scenarios ?? []);
+    setCatalog(c.resources ?? []);
     setStreamEvents(streams.events ?? []);
+    if (task?.id) {
+      const t = await fetch(`/api/tasks/${task.id}`).then((r) => r.json());
+      if (t.task) setTask(t.task);
+    }
     if (address) {
       const b = await fetch(`/api/balances?address=${address}`).then((r) =>
         r.json(),
@@ -84,7 +114,7 @@ function DeskInner() {
       if (b.balances) setBalances(b.balances);
       if (b.error) setError(b.error);
     }
-  }, [address]);
+  }, [address, task?.id]);
 
   useEffect(() => {
     void refresh();
@@ -100,37 +130,62 @@ function DeskInner() {
     [entries],
   );
 
-  async function propose(
-    scenario: AgentProposal,
-    opts?: { dryRun?: boolean; selfPay?: boolean },
-  ) {
+  async function startTask() {
     setBusy(true);
     setError(null);
     setMessage(null);
+    setReceipt(null);
     try {
-      const res = await fetch("/api/agent/propose", {
+      const res = await fetch("/api/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          scenario: scenario.scenario,
-          label: scenario.label,
-          resource: scenario.resource,
-          payee: opts?.selfPay && address ? address : scenario.payee,
-          amountBaseUnits: scenario.amountBaseUnits,
-          mint: scenario.mint,
-          settlementKind: opts?.selfPay ? "spl_usdc" : scenario.settlementKind,
-          selfPay: opts?.selfPay,
-          dryRun: opts?.dryRun,
+          prompt: promptInput,
+          budgetBaseUnits: budgetInput,
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Propose failed");
-      setFocus(data.entry);
+      if (!res.ok) throw new Error(data.error ?? "Could not start task");
+      setTask(data.task);
       setMessage(
-        `${data.decision.status}: ${data.decision.reason}${
-          opts?.dryRun ? " (dry-run — no broadcast)" : ""
-        }`,
+        "Fixture mode task started — agent will inspect catalog next.",
       );
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function agentStep(
+    action:
+      | "inspect"
+      | "request_blocked"
+      | "request_approved"
+      | "request_approval_tier"
+      | "compose_answer",
+  ) {
+    if (!task) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/agent/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ taskId: task.id, action }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Agent step failed");
+      setTask(data.task);
+      setMessage(`${data.mode}: ${data.message}`);
+      if (data.entryId) {
+        const entry =
+          (await fetch("/api/ledger").then((r) => r.json())).entries?.find(
+            (e: LedgerEntry) => e.id === data.entryId,
+          ) ?? null;
+        if (entry) setFocus(entry);
+      }
       await refresh();
       return data;
     } catch (err) {
@@ -141,13 +196,17 @@ function DeskInner() {
     }
   }
 
-  async function onApprove(id: string) {
+  async function onApprove(entry: LedgerEntry) {
     setBusy(true);
     setError(null);
     try {
-      const entry = await approveEntry(id, operatorToken);
-      setFocus(entry);
-      setMessage("Human approved — ready to prepare & sign.");
+      const updated = await approveEntry(
+        entry.id,
+        operatorToken,
+        entry.intentHash,
+      );
+      setFocus(updated);
+      setMessage("Operator approved — wallet may prepare & sign.");
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -170,7 +229,7 @@ function DeskInner() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Action failed");
       setFocus(data.entry);
-      setMessage(`Spend ${action}ed — no signature built.`);
+      setMessage(`Spend ${action}ed — reservation released.`);
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -179,7 +238,7 @@ function DeskInner() {
     }
   }
 
-  async function onSettle(entry: LedgerEntry, selfPay = false) {
+  async function onSettle(entry: LedgerEntry) {
     if (!address || !provider) {
       setError("Connect Phantom (Devnet) first.");
       return;
@@ -191,12 +250,15 @@ function DeskInner() {
         entryId: entry.id,
         fromOwner: address,
         provider: provider as never,
-        selfPay,
+        selfPay: false,
       });
       setFocus(settled);
       setReceipt(settled);
       setMessage(`Settled on Devnet — ${settled.signature}`);
       await refresh();
+      if (task) {
+        await agentStep("compose_answer");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       await refresh();
@@ -205,7 +267,7 @@ function DeskInner() {
     }
   }
 
-  async function runGuidedDemo() {
+  async function runResearchDemo() {
     if (!address || !provider) {
       setError("Connect Phantom (Devnet) before the guided demo.");
       return;
@@ -213,17 +275,11 @@ function DeskInner() {
     if (
       !balances ||
       balances.sol < 0.02 ||
-      BigInt(balances.usdcBaseUnits) < 600_000n
+      BigInt(balances.usdcBaseUnits) < 100_000n
     ) {
       setError(
-        "Fund Devnet wallet: ≥0.02 SOL (faucet.solana.com) and ≥0.60 USDC (faucet.circle.com).",
+        "Fund Devnet wallet: ≥0.02 SOL (faucet.solana.com) and ≥0.10 USDC (faucet.circle.com).",
       );
-      return;
-    }
-    const blocked = scenarios.find((s) => s.scenario === "blocked_demo");
-    const approval = scenarios.find((s) => s.scenario === "approval_demo");
-    if (!blocked || !approval) {
-      setError("Scenarios not loaded.");
       return;
     }
 
@@ -231,26 +287,59 @@ function DeskInner() {
     setReceipt(null);
     setError(null);
     try {
-      setMessage("1/3 Policy firewall — proposing non-allowlisted drain…");
-      await propose(blocked);
+      setMessage("Starting fixture research task…");
+      const created = await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: promptInput,
+          budgetBaseUnits: budgetInput,
+        }),
+      }).then((r) => r.json());
+      if (!created.task) throw new Error(created.error ?? "Task failed");
+      setTask(created.task);
+      const taskId = created.task.id as string;
 
-      setMessage(
-        "2/3 Human approval widget — allowlisted spend above threshold…",
-      );
-      const mid = await propose(approval);
-      if (mid?.entry?.id) {
-        await onApprove(mid.entry.id);
-        setMessage("3/3 Dry-run simulate → Phantom sign → settle (self-pay)…");
-        const approvedEntry = {
-          ...mid.entry,
-          status: "approved" as const,
-        };
+      async function step(action: Parameters<typeof agentStep>[0]) {
+        const res = await fetch("/api/agent/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ taskId, action }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? action);
+        setTask(data.task);
+        setMessage(data.message);
+        return data;
+      }
+
+      setMessage("Inspect catalog (fixture)…");
+      await step("inspect");
+
+      setMessage("Blocked purchase — policy reasons…");
+      await step("request_blocked");
+
+      setMessage("Approved alternative — under threshold…");
+      const allowed = await step("request_approved");
+      if (allowed.entryId) {
+        const ledger = await fetch("/api/ledger").then((r) => r.json());
+        const entry = (ledger.entries as LedgerEntry[]).find(
+          (e) => e.id === allowed.entryId,
+        );
+        if (!entry) throw new Error("Entry missing after allow");
+        setFocus(entry);
+        setMessage("Simulate → Phantom sign → settle to merchant…");
+        const settled = await settleEntry({
+          entryId: entry.id,
+          fromOwner: address,
+          provider: provider as never,
+          selfPay: false,
+        });
+        setFocus(settled);
+        setReceipt(settled);
+        setMessage("Compose answer from purchased content…");
+        await step("compose_answer");
         await refresh();
-        const latest = (await fetch("/api/ledger").then((r) => r.json()))
-          .entries as LedgerEntry[];
-        const target =
-          latest.find((e) => e.id === approvedEntry.id) ?? approvedEntry;
-        await onSettle(target, true);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -273,7 +362,8 @@ function DeskInner() {
         </p>
         <h1 className="brand">Policy Desk</h1>
         <p className="lede">
-          Agents propose. Policy decides. Humans approve. Solana settles.
+          A research agent buys useful data within budget — policy blocks bad
+          merchants, humans approve when needed, Solana settles before content.
         </p>
         <div className="cta-row">
           {!address ? (
@@ -292,22 +382,15 @@ function DeskInner() {
             <button
               className="btn primary"
               disabled={busy}
-              onClick={() => void runGuidedDemo()}
+              onClick={() => void runResearchDemo()}
             >
-              Run 90s demo
+              Run research demo
             </button>
           )}
-          <button
-            className="btn ghost"
-            disabled={busy || scenarios.length === 0}
-            onClick={() => {
-              const s = scenarios.find((x) => x.scenario === "blocked_demo");
-              if (s) void propose(s, { dryRun: true });
-            }}
-          >
-            Dry-run blocked path
-          </button>
         </div>
+        <p className="fixture-banner" role="status">
+          Fixture mode is labeled — deterministic tools, not a silent live LLM.
+        </p>
         {address ? (
           <p className="wallet-line mono">
             {shortKey(address, 6)} · SOL{" "}
@@ -336,121 +419,195 @@ function DeskInner() {
         />
       ) : null}
 
-      {policy ? (
-        <section className="metrics" aria-label="Treasury metrics">
+      {policy?.budget ? (
+        <section className="metrics" aria-label="Budget strip">
           <div className="metric">
-            <span className="metric-k">Posture</span>
-            <strong className={`regime regime-${policy.regime.regime}`}>
-              {policy.regime.label}
+            <span className="metric-k">Available</span>
+            <strong className="metric-v mono">
+              {formatUsdc(policy.budget.availableBaseUnits)} USDC
             </strong>
-            <p className="metric-note">{policy.regime.explain}</p>
+          </div>
+          <div className="metric">
+            <span className="metric-k">Reserved</span>
+            <strong className="metric-v mono">
+              {formatUsdc(policy.budget.reservedBaseUnits)} USDC
+            </strong>
+          </div>
+          <div className="metric">
+            <span className="metric-k">Confirmed spend</span>
+            <strong className="metric-v mono">
+              {formatUsdc(policy.budget.confirmedBaseUnits)} USDC
+            </strong>
           </div>
           <div className="metric">
             <span className="metric-k">Daily remaining</span>
             <strong className="metric-v mono">
-              {formatUsdc(policy.regime.remainingBaseUnits)} USDC
+              {formatUsdc(policy.budget.remainingBaseUnits)} USDC
             </strong>
             <p className="metric-note">
-              Cap {formatUsdc(policy.policy.dailyCapBaseUnits)} · spent{" "}
-              {formatUsdc(policy.dailySpentBaseUnits)}
-            </p>
-          </div>
-          <div className="metric">
-            <span className="metric-k">Per-tx / approval</span>
-            <strong className="metric-v mono">
-              {formatUsdc(policy.policy.perTxCapBaseUnits)} /{" "}
-              {formatUsdc(policy.policy.approvalThresholdBaseUnits)}
-            </strong>
-            <p className="metric-note">
-              Human gate above threshold · {policy.trust.escrowNote}
-            </p>
-          </div>
-          <div className="metric">
-            <span className="metric-k">Wallet</span>
-            <strong className="metric-v mono">
-              {balances
-                ? `${formatSol(balances.sol)} SOL · ${formatUsdc(balances.usdcBaseUnits)} USDC`
-                : address
-                  ? "loading…"
-                  : "—"}
-            </strong>
-            <p className="metric-note">
-              Devnet mint {shortKey(policy.trust.mint, 4)}
+              Cap {formatUsdc(policy.budget.dailyCapBaseUnits)} ·{" "}
+              {policy.policyVersion}
             </p>
           </div>
         </section>
-      ) : (
-        <p className="muted loading-line">Loading policy…</p>
-      )}
+      ) : null}
 
       <div className="desk-grid">
         <section className="panel ops">
-          <h2>Agent proposals</h2>
+          <h2>Run a task</h2>
           <p className="muted">
-            Scripted judge path — blocked drain, then approve + settle. No LLM
-            required.
+            Start with a USDC budget. The fixture agent inspects the catalog,
+            hits a blocked merchant, recovers to an approved resource, then
+            settles before using the paid content.
           </p>
-          <div className="scenario-grid">
-            {scenarios.map((s) => (
-              <article key={s.scenario} className="scenario">
-                <h3>{s.label}</h3>
-                <p>{s.rationale}</p>
-                <p className="mono">
-                  {formatUsdc(s.amountBaseUnits)} USDC · {s.settlementKind}
-                </p>
-                <div className="cta-row">
-                  <button
-                    className="btn"
-                    disabled={busy}
-                    onClick={() => void propose(s)}
-                  >
-                    Propose
-                  </button>
-                  <button
-                    className="btn ghost"
-                    disabled={busy}
-                    onClick={() => void propose(s, { dryRun: true })}
-                  >
-                    Dry-run
-                  </button>
-                  {s.scenario !== "blocked_demo" && address ? (
-                    <button
-                      className="btn ghost"
-                      disabled={busy}
-                      onClick={() => void propose(s, { selfPay: true })}
-                    >
-                      Self-pay
-                    </button>
-                  ) : null}
-                </div>
-              </article>
-            ))}
+          <label className="field">
+            <span>Prompt</span>
+            <textarea
+              value={promptInput}
+              onChange={(e) => setPromptInput(e.target.value)}
+              rows={3}
+            />
+          </label>
+          <label className="field">
+            <span>Task budget (USDC base units, 6 decimals)</span>
+            <input
+              className="mono"
+              value={budgetInput}
+              onChange={(e) => setBudgetInput(e.target.value)}
+              inputMode="numeric"
+            />
+          </label>
+          <div className="cta-row">
+            <button
+              className="btn primary"
+              disabled={busy}
+              onClick={() => void startTask()}
+            >
+              Start task
+            </button>
+            <button
+              className="btn"
+              disabled={busy || !task}
+              onClick={() => void agentStep("inspect")}
+            >
+              Inspect catalog
+            </button>
+            <button
+              className="btn"
+              disabled={busy || !task}
+              onClick={() => void agentStep("request_blocked")}
+            >
+              Request blocked
+            </button>
+            <button
+              className="btn"
+              disabled={busy || !task}
+              onClick={() => void agentStep("request_approved")}
+            >
+              Request approved
+            </button>
+            <button
+              className="btn"
+              disabled={busy || !task}
+              onClick={() => void agentStep("request_approval_tier")}
+            >
+              Request above threshold
+            </button>
           </div>
+
+          <h3>Catalog preview</h3>
+          <ul className="catalog-list">
+            {catalog.map((r) => (
+              <li key={r.id}>
+                <strong>{r.title}</strong>
+                <span
+                  className={`pill ${r.allowlisted ? "status-approved" : "status-blocked"}`}
+                >
+                  {r.allowlisted ? "allowlisted" : "blocked"}
+                </span>
+                <p className="muted">{r.preview}</p>
+                <p className="mono">
+                  {formatUsdc(r.amountBaseUnits)} USDC · {r.merchantLabel}
+                  {r.teamOperated ? " · team-operated" : ""}
+                </p>
+              </li>
+            ))}
+          </ul>
         </section>
 
         <div className="desk-stack">
+          <section className="panel timeline-panel">
+            <h2>Task timeline</h2>
+            {!task ? (
+              <p className="muted empty-slot">
+                No active task — start one to see the research workflow.
+              </p>
+            ) : (
+              <>
+                <p className="fixture-banner">
+                  Mode: <strong>{task.mode}</strong> · budget{" "}
+                  {formatUsdc(task.budgetBaseUnits)} · reserved{" "}
+                  {formatUsdc(task.reservedBaseUnits)} · spent{" "}
+                  {formatUsdc(task.spentBaseUnits)}
+                </p>
+                <ol className="timeline">
+                  {task.timeline.map((ev) => (
+                    <li key={ev.id}>
+                      <span className="mono">{ev.ts.slice(11, 19)}</span>
+                      <strong>{ev.kind}</strong>
+                      <p>{ev.message}</p>
+                      {ev.kind === "policy.blocked" && ev.meta ? (
+                        <details>
+                          <summary>Policy inspection</summary>
+                          <pre className="mono small">
+                            {JSON.stringify(ev.meta, null, 2)}
+                          </pre>
+                        </details>
+                      ) : null}
+                    </li>
+                  ))}
+                </ol>
+                {task.answer ? (
+                  <article className="answer-card">
+                    <h3>Answer (cites purchase)</h3>
+                    <pre>{task.answer}</pre>
+                  </article>
+                ) : null}
+              </>
+            )}
+          </section>
+
           <section className="panel approvals" id="approvals">
-            <h2>Human approval</h2>
+            <h2>Approval card</h2>
             <p className="muted">
-              SeaPay-style pause — above-threshold spends wait here.
+              SeaPay-style pause — merchant, amount, reason, budget impact,
+              expiry.
             </p>
             {pending.length === 0 ? (
               <p className="muted empty-slot">No spends awaiting approval.</p>
             ) : (
               <ul className="approval-list">
                 {pending.map((e) => (
-                  <li key={e.id}>
+                  <li key={e.id} className="approval-card">
                     <div>
                       <strong>{e.label}</strong>
                       <p className="mono">
-                        {formatUsdc(e.amountBaseUnits)} USDC · {e.policyReason}
+                        {formatUsdc(e.amountBaseUnits)} USDC →{" "}
+                        {shortKey(e.payee, 4)}
+                      </p>
+                      <p className="muted">{e.policyReason}</p>
+                      <p className="muted small">
+                        Resource {e.resource}
+                        {e.approvalExpiresAt
+                          ? ` · expires ${e.approvalExpiresAt}`
+                          : ""}
                       </p>
                     </div>
                     <div className="cta-row">
                       <button
                         className="btn primary"
                         disabled={busy}
-                        onClick={() => void onApprove(e.id)}
+                        onClick={() => void onApprove(e)}
                       >
                         Approve
                       </button>
@@ -460,13 +617,6 @@ function DeskInner() {
                         onClick={() => void onReject(e.id, "reject")}
                       >
                         Reject
-                      </button>
-                      <button
-                        className="btn ghost"
-                        disabled={busy}
-                        onClick={() => void onReject(e.id, "cancel")}
-                      >
-                        Cancel
                       </button>
                     </div>
                   </li>
@@ -486,32 +636,27 @@ function DeskInner() {
                 <p className="muted">
                   {focus.policyStatus}: {focus.policyReason}
                 </p>
-                {focus.feeLamportsEstimate ? (
-                  <p className="muted">
-                    Fee estimate ~{focus.feeLamportsEstimate} lamports
-                    {focus.simulateOk === false
-                      ? " · simulation failed"
-                      : focus.simulateOk
-                        ? " · simulation OK"
-                        : ""}
-                  </p>
-                ) : null}
-                {["approved", "ready_to_sign", "failed"].includes(focus.status) &&
-                address ? (
+                {["approved", "ready_to_sign", "failed"].includes(
+                  focus.status,
+                ) && address ? (
                   <button
                     className="btn primary"
                     disabled={busy}
-                    onClick={() => void onSettle(focus, true)}
+                    onClick={() => void onSettle(focus)}
                   >
-                    Simulate → sign → settle (self-pay)
+                    Simulate → sign → settle
                   </button>
                 ) : null}
                 {focus.error ? <p className="warn">{focus.error}</p> : null}
               </div>
             ) : (
-              <p className="muted">Propose a spend to see the state machine.</p>
+              <p className="muted">Run a task step to focus a payment.</p>
             )}
-            {message ? <p className="ok-msg" role="status">{message}</p> : null}
+            {message ? (
+              <p className="ok-msg" role="status">
+                {message}
+              </p>
+            ) : null}
             {error ? (
               <p className="warn" role="alert">
                 {error}
@@ -521,12 +666,13 @@ function DeskInner() {
         </div>
       </div>
 
-      {receipt ? <ReceiptCard entry={receipt} /> : null}
+      {receipt ? <ReceiptCard entry={receipt} task={task} /> : null}
 
       <section className="panel ledger">
         <h2>Decision log</h2>
         <p className="muted">
-          Every policy decision stays visible — Agent Guard twin for the desk.
+          Visible policy decisions and audit events — not an on-chain immutable
+          trail.
         </p>
         <div className="split">
           <div>
@@ -545,11 +691,6 @@ function DeskInner() {
                     <span className={`pill status-${e.status}`}>{e.status}</span>{" "}
                     {e.label} · {formatUsdc(e.amountBaseUnits)} USDC
                   </button>
-                  {e.explorerUrl ? (
-                    <a href={e.explorerUrl} target="_blank" rel="noreferrer">
-                      explorer
-                    </a>
-                  ) : null}
                 </li>
               ))}
             </ul>
@@ -566,6 +707,9 @@ function DeskInner() {
             </ul>
           </div>
         </div>
+        {policy?.trust.streamsNote ? (
+          <p className="muted small">{policy.trust.streamsNote}</p>
+        ) : null}
       </section>
 
       <ResourceStrip />
@@ -573,10 +717,10 @@ function DeskInner() {
 
       <footer className="footer">
         <p>
-          Built during UBC Hackathon 2026 by Dipak Yadav (full-stack /
-          product lead), Utkarsh Lubal (cybersecurity engineer), and Kashif
-          Manzer (blockchain engineer). Solana Devnet USDC · Phantom · x402 ·
-          optional QuickNode Streams.
+          Built during UBC Hackathon 2026 by Dipak Yadav (full-stack developer),
+          Utkarsh Lubal (cybersecurity engineer), and Kashif Manzer (blockchain
+          engineer). Solana Devnet USDC · Phantom · x402. Streams ticker is not
+          a reconcile bounty claim yet.
         </p>
       </footer>
     </div>

@@ -4,9 +4,11 @@
 > Prep research / gallery notes lived in a separate private reference project — **this repository’s git history starts after kickoff.**  
 > Repo stays **private** until Devpost submission; flip to public before submit.
 
-Policy-gated Solana USDC spending for AI agents. Flow judges can see in ~90 seconds:
+Policy-gated Solana USDC spending for a **research agent** that buys useful data within budget. Flow judges can see in ~90 seconds:
 
-**propose → policy evaluate → human approve → dry-run simulate → Phantom sign → Devnet settle → receipt**
+**start task → inspect catalog → blocked recover → approve (if needed) → simulate → Phantom sign → confirm (TransferChecked validated) → deliver paid content → answer + structured receipt**
+
+Agent execution ships as labeled **fixture mode** (deterministic tools). Live LLM adapters can be added later; do not present fixture steps as silent live-model execution.
 
 ## Engineering team
 
@@ -40,15 +42,17 @@ AI agents that can pay are useful until they are dangerous. Policy Desk gives an
 ## Architecture
 
 ```
-Agent propose → lib/policy (allow / block / needs_approval)
+Task + budget → fixture agent tools → catalog resourceId
+                     ↓
+              lib/policy (allow / block / needs_approval)
                      ↓
               Human approval widget (if needed)
                      ↓
-         settle/prepare (re-check + simulate)
+         settle/prepare (re-check + simulate + quote bind)
                      ↓
-         Phantom sign → settle/confirm → explorer receipt
-                     ↘
-                   x402 quote → pay → resume (/api/x402/weather)
+         Phantom sign → settle/confirm (template validate) → explorer receipt
+                     ↓
+         x402 deliver only after settled → answer cites purchase
 ```
 
 Full write-up: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
@@ -66,9 +70,9 @@ Full write-up: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 9. Treasury desk metaphor + posture labels + LIVE ticker
 10. Trust strip: Devnet, mint, wallet, allowlist
 11. Official resource strip (faucets, Phantom, x402, Circle mint, Streams)
-12. QuickNode Streams webhook → LIVE feed (`docs/STREAMS.md`)
+12. QuickNode Streams webhook → LIVE ticker only (`docs/STREAMS.md`) — **not** payment reconcile; **do not claim the Streams bounty** until reconcile ships
 
-Deferred: sponsored/gasless fees, on-chain escrow PDAs, CCTP, NFT attestation, Ollama propose — see [docs/FEATURE-BACKLOG.md](docs/FEATURE-BACKLOG.md).
+Deferred: sponsored/gasless fees, on-chain vault/escrow PDAs, CCTP, NFT attestation, live LLM — see [docs/FEATURE-BACKLOG.md](docs/FEATURE-BACKLOG.md).
 
 ## Organizer APIs wired
 
@@ -103,12 +107,15 @@ cat .tunnel-url
 
 ## Demo script (~60–90s)
 
-1. Open Policy Desk → Connect Phantom (Devnet) → show trust strip + posture.
-2. **Run 90s demo**:
-   - Non-allowlisted merchant → **blocked** (no tx).
-   - Above-threshold x402 → **human approval** widget → Approve.
-   - Simulate → Phantom sign → **settled** receipt + explorer.
-3. One-liner: “Agents get a budget — not a blank check.”
+1. Open Policy Desk → Connect Phantom (Devnet) → budget strip (available / reserved / confirmed).
+2. Point at **Fixture mode** banner (honest labeling).
+3. **Run research demo** (or step manually):
+   - Start task with USDC budget → inspect catalog preview.
+   - Request blocked merchant → visible rejection reasons → recover.
+   - Request approved weather brief → simulate → Phantom sign → settle to team-operated merchant.
+   - Answer cites purchased content → structured receipt (task, intent, sig, digests).
+4. Optional: show above-threshold path with approval card.
+5. One-liner: “Agents get a budget — not a blank check.”
 
 ## Threat model
 
