@@ -34,8 +34,10 @@
 | Boundary | Rule |
 |---|---|
 | Model → policy | Scenario/agent text never sets caps, mint, or allowlists |
-| Browser → approvals | Operator HttpOnly session from `/api/operator/login` + CSRF (fail closed if `OPERATOR_TOKEN` unset). No `NEXT_PUBLIC_` operator secrets. |
-| Browser → settle | Prepare re-checks policy + destination; confirm validates TransferChecked |
+| Browser → approvals | Operator HttpOnly session from `/api/operator/login` + CSRF from auth/session JSON (fail closed if `OPERATOR_TOKEN` unset). No `NEXT_PUBLIC_` operator secrets; CSRF is not read via `document.cookie`. |
+| Browser → settle | Prepare re-checks policy + destination; confirm binds `prepareId` + `preparedTxBase64` message, reconciles stored signature first, validates TransferChecked + `confirmTransaction.err` |
+| Browser → propose | `/api/agent/propose` requires wallet session + CSRF; catalog `resourceId` only — client payee/amount/mint overrides rejected; task ownership enforced |
+| Wallet login | Signature verified against server-stored challenge message; nonce consumed only after success |
 | Seller → desk | x402 seller verifies amount, mint, payTo, and signed transfer shape |
 | Webhook → ledger | Streams verifies shared secret **when configured**; otherwise acknowledge-only |
 | Config → network | Cluster/RPC guards refuse mainnet configuration |
@@ -65,6 +67,7 @@
 | x402 seller is a local demo facilitator | Not a hosted facilitator / compliance network |
 | Streams webhook | Ticker only — not payment reconcile; do not claim Streams bounty yet |
 | Fixture agent | Deterministic tools labeled in UI — not a live model |
+| Live agent | Bounded tool loop with server credentials; unverified without `OPENAI_API_KEY`; no arbitrary URL fetch / operator secrets |
 | File-store concurrency | Mutex is single-process only; not multi-instance safe |
 | Phantom UX | User can still sign unrelated txs outside this desk |
 | Public tunnel / deploy URL | Anyone with the URL + operator token can hit approval APIs — rotate token for public demos |

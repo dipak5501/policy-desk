@@ -8,7 +8,7 @@ Policy-gated Solana USDC spending for a **research agent** that buys useful data
 
 **start task → inspect catalog → blocked recover → approve (if needed) → simulate → Phantom sign → confirm (TransferChecked validated) → deliver paid content → answer + structured receipt**
 
-Agent execution ships as labeled **fixture mode** (deterministic tools). Live LLM adapters can be added later; do not present fixture steps as silent live-model execution.
+Agent execution ships as labeled **fixture mode** (deterministic tools). Optional **live** mode (`OPENAI_API_KEY`) runs a bounded, schema-validated tool loop with approval/payment pauses — never present fixture steps as silent live-model execution.
 
 ## Engineering team
 
@@ -72,7 +72,7 @@ Full write-up: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 11. Official resource strip (faucets, Phantom, x402, Circle mint, Streams)
 12. QuickNode Streams webhook → LIVE ticker only (`docs/STREAMS.md`) — **not** payment reconcile; **do not claim the Streams bounty** until reconcile ships
 
-Deferred: sponsored/gasless fees, on-chain vault/escrow PDAs, CCTP, NFT attestation, live LLM — see [docs/FEATURE-BACKLOG.md](docs/FEATURE-BACKLOG.md).
+Deferred: sponsored/gasless fees, on-chain vault/escrow PDAs, CCTP, NFT attestation — see [docs/FEATURE-BACKLOG.md](docs/FEATURE-BACKLOG.md). Optional live LLM mode needs `OPENAI_API_KEY` (otherwise fixture-only).
 
 ## Organizer APIs wired
 
@@ -107,8 +107,8 @@ cat .tunnel-url
 
 ## Demo script (~60–90s)
 
-1. Open Policy Desk → Connect Phantom (Devnet) → sign wallet login challenge (session cookie).
-2. Operator login (server password → HttpOnly session) for above-threshold approvals.
+1. Open Policy Desk → Connect Phantom (Devnet) → sign wallet login challenge (HttpOnly session + CSRF in JSON / shared client state — not `document.cookie`).
+2. Operator login (server password → HttpOnly session + CSRF) for above-threshold approvals.
 3. Point at **Fixture mode** banner (honest labeling).
 4. **Run research demo**:
    - Task budget $1.00 → inspect catalog.
@@ -117,7 +117,7 @@ cat .tunnel-url
    - Sample content delivered for that intent only → answer + structured receipt.
 5. One-liner: “Agents get a budget — not a blank check.”
 
-**Limits:** single-process ledger mutex (not multi-worker); local x402 is a ledger-gated demo merchant; Streams ticker ≠ bounty reconcile; weather body is labeled sample content.
+**Limits:** single-process ledger mutex (not multi-worker); local x402 is a ledger-gated demo merchant; Streams ticker ≠ bounty reconcile; weather body is labeled sample content; live mode unverified without `OPENAI_API_KEY`.
 
 ## Threat model
 

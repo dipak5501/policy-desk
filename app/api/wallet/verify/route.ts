@@ -3,6 +3,7 @@ import nacl from "tweetnacl";
 import bs58 from "bs58";
 import {
   consumeWalletChallenge,
+  getWalletChallenge,
   issueWalletSession,
 } from "@/lib/security/session";
 import { PublicKey } from "@solana/web3.js";
@@ -12,7 +13,8 @@ export const dynamic = "force-dynamic";
 
 /**
  * Verify a Phantom-signed challenge. Connected address alone is not auth —
- * signature over the nonce message is required.
+ * signature must cover the exact server-issued challenge message.
+ * Nonce is consumed only after successful verification.
  */
 export async function POST(request: Request) {
   try {
@@ -22,27 +24,52 @@ export async function POST(request: Request) {
       message?: string;
       signatureBase58?: string;
     };
-    if (!body.wallet || !body.nonce || !body.message || !body.signatureBase58) {
+    if (!body.wallet || !body.nonce || !body.signatureBase58) {
       return NextResponse.json(
-        { error: "wallet, nonce, message, signatureBase58 required" },
+        { error: "wallet, nonce, signatureBase58 required" },
         { status: 400 },
       );
     }
-    if (!consumeWalletChallenge(body.wallet, body.nonce)) {
+
+    const challenge = getWalletChallenge(body.wallet);
+    if (!challenge) {
       return NextResponse.json(
         { error: "Challenge missing or expired" },
         { status: 401 },
       );
     }
+    if (challenge.nonce !== body.nonce) {
+      return NextResponse.json(
+        { error: "Challenge nonce mismatch" },
+        { status: 401 },
+      );
+    }
+    // Reject client-supplied alternate messages even if signed
+    if (body.message && body.message !== challenge.message) {
+      return NextResponse.json(
+        { error: "Challenge message mismatch" },
+        { status: 401 },
+      );
+    }
+
     const pubkey = new PublicKey(body.wallet);
     const ok = nacl.sign.detached.verify(
-      new TextEncoder().encode(body.message),
+      new TextEncoder().encode(challenge.message),
       bs58.decode(body.signatureBase58),
       pubkey.toBytes(),
     );
     if (!ok) {
+      // Do not consume — allow a retry within expiry
       return NextResponse.json({ error: "Bad signature" }, { status: 401 });
     }
+
+    if (!consumeWalletChallenge(body.wallet, body.nonce)) {
+      return NextResponse.json(
+        { error: "Challenge already consumed or expired" },
+        { status: 401 },
+      );
+    }
+
     const session = issueWalletSession(body.wallet);
     const res = NextResponse.json({
       ok: true,

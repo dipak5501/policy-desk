@@ -5,9 +5,15 @@ const COOKIE_OPERATOR = "pd_operator_session";
 const COOKIE_CSRF = "pd_csrf";
 
 type SessionStore = {
-  walletChallenges: Map<string, { nonce: string; expiresAt: number }>;
-  walletSessions: Map<string, { wallet: string; expiresAt: number }>;
-  operatorSessions: Map<string, { expiresAt: number }>;
+  walletChallenges: Map<
+    string,
+    { nonce: string; message: string; expiresAt: number }
+  >;
+  walletSessions: Map<
+    string,
+    { wallet: string; expiresAt: number; csrf: string }
+  >;
+  operatorSessions: Map<string, { expiresAt: number; csrf: string }>;
 };
 
 declare global {
@@ -74,20 +80,42 @@ export function createWalletChallenge(wallet: string): {
 } {
   const nonce = randomBytes(16).toString("hex");
   const expiresAt = Date.now() + 5 * 60 * 1000;
-  store().walletChallenges.set(wallet, { nonce, expiresAt });
   const message = `Policy Desk wallet login\nWallet: ${wallet}\nNonce: ${nonce}\nExpires: ${new Date(expiresAt).toISOString()}`;
+  // Persist the exact challenge message server-side — verify must use this, not client text.
+  store().walletChallenges.set(wallet, { nonce, message, expiresAt });
   return { nonce, message, expiresAt: new Date(expiresAt).toISOString() };
 }
 
+/** Peek at an outstanding challenge without consuming it. */
+export function getWalletChallenge(
+  wallet: string,
+): { nonce: string; message: string; expiresAt: number } | null {
+  const row = store().walletChallenges.get(wallet);
+  if (!row) return null;
+  if (row.expiresAt < Date.now()) {
+    store().walletChallenges.delete(wallet);
+    return null;
+  }
+  return row;
+}
+
+/**
+ * Delete a challenge after successful signature verification.
+ * Call only once the signature over the stored message has been checked.
+ */
 export function consumeWalletChallenge(
   wallet: string,
   nonce: string,
 ): boolean {
   const row = store().walletChallenges.get(wallet);
-  store().walletChallenges.delete(wallet);
   if (!row) return false;
-  if (row.expiresAt < Date.now()) return false;
-  return row.nonce === nonce;
+  if (row.expiresAt < Date.now()) {
+    store().walletChallenges.delete(wallet);
+    return false;
+  }
+  if (row.nonce !== nonce) return false;
+  store().walletChallenges.delete(wallet);
+  return true;
 }
 
 export function issueWalletSession(wallet: string): {
@@ -97,18 +125,21 @@ export function issueWalletSession(wallet: string): {
   const sid = randomBytes(24).toString("hex");
   const csrf = randomBytes(24).toString("hex");
   const expiresAt = Date.now() + 12 * 60 * 60 * 1000;
-  store().walletSessions.set(sid, { wallet, expiresAt });
+  store().walletSessions.set(sid, { wallet, expiresAt, csrf });
   const signed = `${sid}.${sign(sid)}`;
   return {
     csrf,
     setCookies: [
       cookie(COOKIE_WALLET, signed, 12 * 60 * 60),
+      // HttpOnly double-submit cookie — clients must use JSON csrf, not document.cookie
       cookie(COOKIE_CSRF, csrf, 12 * 60 * 60),
     ],
   };
 }
 
-export function readWalletSession(request: Request): string | null {
+function readWalletSessionRow(
+  request: Request,
+): { wallet: string; csrf: string } | null {
   if (!secret()) return null;
   const cookies = parseCookies(request);
   const raw = cookies[COOKIE_WALLET];
@@ -121,7 +152,6 @@ export function readWalletSession(request: Request): string | null {
       !timingSafeEqual(Buffer.from(sig), Buffer.from(expected)) &&
       sig !== expected
     ) {
-      // length mismatch throws — treat as invalid
       return null;
     }
   } catch {
@@ -129,7 +159,18 @@ export function readWalletSession(request: Request): string | null {
   }
   const row = store().walletSessions.get(sid);
   if (!row || row.expiresAt < Date.now()) return null;
-  return row.wallet;
+  return { wallet: row.wallet, csrf: row.csrf };
+}
+
+export function readWalletSession(request: Request): string | null {
+  return readWalletSessionRow(request)?.wallet ?? null;
+}
+
+/** Authenticated wallet session details including CSRF for client restore after reload. */
+export function readWalletSessionDetails(
+  request: Request,
+): { wallet: string; csrf: string } | null {
+  return readWalletSessionRow(request);
 }
 
 export function requireWalletSession(request: Request): string {
@@ -139,10 +180,35 @@ export function requireWalletSession(request: Request): string {
 }
 
 export function assertCsrf(request: Request): boolean {
+  const header = request.headers.get("x-csrf-token") ?? "";
+  if (!header) return false;
+
+  // Prefer session-bound CSRF (wallet or operator) over cookie-only compare.
+  const walletRow = readWalletSessionRow(request);
+  if (walletRow?.csrf) {
+    try {
+      if (timingSafeEqual(Buffer.from(walletRow.csrf), Buffer.from(header))) {
+        return true;
+      }
+    } catch {
+      if (walletRow.csrf === header) return true;
+    }
+  }
+  const opRow = readOperatorSessionRow(request);
+  if (opRow?.csrf) {
+    try {
+      if (timingSafeEqual(Buffer.from(opRow.csrf), Buffer.from(header))) {
+        return true;
+      }
+    } catch {
+      if (opRow.csrf === header) return true;
+    }
+  }
+
+  // Fallback: classic double-submit against HttpOnly CSRF cookie
   const cookies = parseCookies(request);
   const cookieToken = cookies[COOKIE_CSRF];
-  const header = request.headers.get("x-csrf-token") ?? "";
-  if (!cookieToken || !header) return false;
+  if (!cookieToken) return false;
   try {
     return timingSafeEqual(Buffer.from(cookieToken), Buffer.from(header));
   } catch {
@@ -171,7 +237,7 @@ export function issueOperatorSession(): {
   const sid = randomBytes(24).toString("hex");
   const csrf = randomBytes(24).toString("hex");
   const expiresAt = Date.now() + 8 * 60 * 60 * 1000;
-  store().operatorSessions.set(sid, { expiresAt });
+  store().operatorSessions.set(sid, { expiresAt, csrf });
   const signed = `${sid}.${sign(sid)}`;
   return {
     csrf,
@@ -182,18 +248,30 @@ export function issueOperatorSession(): {
   };
 }
 
-export function readOperatorSession(request: Request): boolean {
-  if (!secret()) return false;
+function readOperatorSessionRow(
+  request: Request,
+): { csrf: string } | null {
+  if (!secret()) return null;
   const cookies = parseCookies(request);
   const raw = cookies[COOKIE_OPERATOR];
-  if (!raw) return false;
+  if (!raw) return null;
   const [sid, sig] = raw.split(".");
-  if (!sid || !sig) return false;
+  if (!sid || !sig) return null;
   const expected = sign(sid);
-  if (sig !== expected) return false;
+  if (sig !== expected) return null;
   const row = store().operatorSessions.get(sid);
-  if (!row || row.expiresAt < Date.now()) return false;
-  return true;
+  if (!row || row.expiresAt < Date.now()) return null;
+  return { csrf: row.csrf };
+}
+
+export function readOperatorSession(request: Request): boolean {
+  return readOperatorSessionRow(request) !== null;
+}
+
+export function readOperatorSessionDetails(
+  request: Request,
+): { csrf: string } | null {
+  return readOperatorSessionRow(request);
 }
 
 export function clearSessions(): string[] {

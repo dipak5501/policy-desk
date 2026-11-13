@@ -293,4 +293,50 @@ describe("adversarial controls", () => {
     setLedgerStatus(entry.id, "awaiting_approval");
     assert.equal(reservedBaseUnits(task.id), 100000n);
   });
+
+  it("catalog propose fails closed on unknown resourceId without client payee override", async () => {
+    const { evaluateCatalogPropose } = await import("../propose/evaluate");
+    const owner = "AxYkHSSywB5pxa4GCwnmwp8ArnR8z8EoqQu2RsbAFpMr";
+    const task = createTask({
+      prompt: "demo",
+      budgetBaseUnits: "1000000",
+      ownerWallet: owner,
+    });
+    const result = evaluateCatalogPropose({
+      resourceId: "not-a-real-resource",
+      taskId: task.id,
+      fromOwner: owner,
+    });
+    assert.equal(result.decision.status, "block");
+    if (result.decision.status === "block") {
+      assert.equal(result.decision.code, "unknown_resource");
+    }
+    assert.equal(result.reserved, false);
+    // Economics come from catalog path only — unknown never reserves caller-chosen amounts
+    assert.equal(result.entry.amountBaseUnits, "1");
+  });
+
+  it("catalog propose binds weather-brief economics from server catalog", async () => {
+    const { evaluateCatalogPropose } = await import("../propose/evaluate");
+    const { getCatalogResource } = await import("../catalog/resources");
+    const owner = "AxYkHSSywB5pxa4GCwnmwp8ArnR8z8EoqQu2RsbAFpMr";
+    const catalog = getCatalogResource("weather-brief");
+    assert.ok(catalog);
+    const task = createTask({
+      prompt: "demo",
+      budgetBaseUnits: "1000000",
+      ownerWallet: owner,
+    });
+    const result = evaluateCatalogPropose({
+      resourceId: "weather-brief",
+      taskId: task.id,
+      fromOwner: owner,
+    });
+    assert.equal(result.entry.payee, catalog!.payee);
+    assert.equal(result.entry.amountBaseUnits, catalog!.amountBaseUnits);
+    assert.equal(result.entry.mint, catalog!.mint);
+    assert.equal(result.entry.resource, catalog!.resource);
+    assert.equal(result.entry.fromOwner, owner);
+  });
 });
+

@@ -10,7 +10,10 @@ import { assertCsrf, readWalletSession } from "@/lib/security/session";
 import { assertDevnetOnly, getConnection } from "@/lib/solana/connection";
 import { explorerTx } from "@/lib/solana/config";
 import { explainSolanaError } from "@/lib/solana/errors";
-import { validateSignedUsdcTransfer } from "@/lib/solana/validateTransfer";
+import {
+  assertSignedMatchesPrepared,
+  validateSignedUsdcTransfer,
+} from "@/lib/solana/validateTransfer";
 import { Transaction } from "@solana/web3.js";
 import bs58 from "bs58";
 
@@ -18,16 +21,44 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function signatureFromSignedTx(raw: Buffer): string {
-  // Legacy Transaction: first signature slot
   const tx = Transaction.from(raw);
   const sig = tx.signature;
   if (!sig) {
-    // Fall back to first signatures entry
     const s = tx.signatures[0]?.signature;
     if (!s) throw new Error("Signed transaction missing signature");
     return bs58.encode(s);
   }
   return bs58.encode(sig);
+}
+
+async function settleFromConfirmedSig(
+  entryId: string,
+  signature: string,
+  settlementKind: string | undefined,
+  taskId: string | undefined,
+  reconciled: boolean,
+) {
+  const settled = setLedgerStatus(entryId, "settled", {
+    signature,
+    explorerUrl: explorerTx(signature),
+    paymentResponse: settlementKind === "x402" ? "x402-resumed" : "spl",
+    error: undefined,
+    deliveryStatus: "pending",
+  });
+  if (taskId) syncTaskBudgetFromLedger(taskId);
+  appendAudit("settle.confirm", {
+    entryId,
+    signature,
+    explorerUrl: settled.explorerUrl,
+    validated: true,
+    reconciled,
+  });
+  return NextResponse.json({
+    entry: settled,
+    signature,
+    explorerUrl: settled.explorerUrl,
+    reconciled,
+  });
 }
 
 export async function POST(request: Request) {
@@ -111,7 +142,6 @@ export async function POST(request: Request) {
         Date.parse(entry.prepareExpiresAt) < Date.now() &&
         !entry.signature
       ) {
-        // Do not release if a signature may have landed — keep confirming if sig exists
         setLedgerStatus(entry.id, "failed", { error: "Prepare expired" });
         return NextResponse.json(
           { error: "Prepare expired — re-run prepare" },
@@ -126,9 +156,89 @@ export async function POST(request: Request) {
         );
       }
 
+      if (!entry.preparedTxBase64) {
+        return NextResponse.json(
+          { error: "Prepared attempt missing preparedTxBase64" },
+          { status: 400 },
+        );
+      }
+
+      const connection = getConnection();
+
+      // Reconcile any stored signature BEFORE accepting another transaction
+      if (entry.signature) {
+        const status = await connection.getSignatureStatuses([entry.signature]);
+        const existing = status.value[0];
+        if (
+          existing &&
+          (existing.confirmationStatus === "confirmed" ||
+            existing.confirmationStatus === "finalized")
+        ) {
+          if (existing.err) {
+            setLedgerStatus(entry.id, "failed", {
+              signature: entry.signature,
+              error: `On-chain execution failed: ${JSON.stringify(existing.err)}`,
+            });
+            return NextResponse.json(
+              {
+                error: "Stored signature confirmed but failed execution",
+                entry: getLedgerEntry(entry.id),
+              },
+              { status: 400 },
+            );
+          }
+          return settleFromConfirmedSig(
+            entry.id,
+            entry.signature,
+            entry.settlementKind,
+            entry.taskId,
+            true,
+          );
+        }
+
+        // Still in-flight / unknown — do not accept a different signed tx
+        let incomingSig: string | undefined;
+        try {
+          incomingSig = signatureFromSignedTx(
+            Buffer.from(body.signedTransactionBase64!, "base64"),
+          );
+        } catch {
+          incomingSig = undefined;
+        }
+        if (incomingSig && incomingSig !== entry.signature) {
+          return NextResponse.json(
+            {
+              error:
+                "Entry already has an in-flight signature — reconcile before submitting another transaction",
+              signature: entry.signature,
+              entry: getLedgerEntry(entry.id),
+            },
+            { status: 409 },
+          );
+        }
+        // Same signature resubmitted — fall through to broadcast/confirm path
+      }
+
       const raw = Buffer.from(body.signedTransactionBase64!, "base64");
       const tx = Transaction.from(raw);
 
+      const preparedBind = assertSignedMatchesPrepared(tx, entry.preparedTxBase64);
+      if (!preparedBind.ok) {
+        appendAudit("settle.reject_prepared_mismatch", {
+          entryId: entry.id,
+          error: preparedBind.error,
+        });
+        if (entry.status === "confirming" && entry.signature) {
+          return NextResponse.json(
+            { error: preparedBind.error, entry },
+            { status: 400 },
+          );
+        }
+        setLedgerStatus(entry.id, "failed", { error: preparedBind.error });
+        return NextResponse.json({ error: preparedBind.error }, { status: 400 });
+      }
+
+      // Expected properties derived from stored prepared attempt (not client body)
       const validation = validateSignedUsdcTransfer(tx, {
         fromOwner: entry.fromOwner,
         toOwner: entry.preparedToOwner,
@@ -140,7 +250,6 @@ export async function POST(request: Request) {
           entryId: entry.id,
           error: validation.error,
         });
-        // Do not overwrite uncertain/successful prior state
         if (entry.status === "confirming" && entry.signature) {
           return NextResponse.json(
             {
@@ -169,12 +278,9 @@ export async function POST(request: Request) {
         );
       }
 
-      // Persist signature before broadcast for reconcile
+      // Persist signature from signed bytes before broadcast
       setLedgerStatus(entry.id, "confirming", { signature: derivedSig });
 
-      const connection = getConnection();
-
-      // Reconcile existing signature first
       const status = await connection.getSignatureStatuses([derivedSig]);
       const existing = status.value[0];
       if (
@@ -188,25 +294,20 @@ export async function POST(request: Request) {
             error: `On-chain execution failed: ${JSON.stringify(existing.err)}`,
           });
           return NextResponse.json(
-            { error: "Transaction confirmed but failed execution", entry: getLedgerEntry(entry.id) },
+            {
+              error: "Transaction confirmed but failed execution",
+              entry: getLedgerEntry(entry.id),
+            },
             { status: 400 },
           );
         }
-        const settled = setLedgerStatus(entry.id, "settled", {
-          signature: derivedSig,
-          explorerUrl: explorerTx(derivedSig),
-          paymentResponse:
-            entry.settlementKind === "x402" ? "x402-resumed" : "spl",
-          error: undefined,
-          deliveryStatus: "pending",
-        });
-        if (entry.taskId) syncTaskBudgetFromLedger(entry.taskId);
-        return NextResponse.json({
-          entry: settled,
-          signature: derivedSig,
-          explorerUrl: settled.explorerUrl,
-          reconciled: true,
-        });
+        return settleFromConfirmedSig(
+          entry.id,
+          derivedSig,
+          entry.settlementKind,
+          entry.taskId,
+          true,
+        );
       }
 
       try {
@@ -215,7 +316,6 @@ export async function POST(request: Request) {
           preflightCommitment: "confirmed",
         });
       } catch (sendErr) {
-        // Ambiguous — keep confirming with signature for later reconcile
         setLedgerStatus(entry.id, "confirming", {
           signature: derivedSig,
           error: `Uncertain broadcast: ${explainSolanaError(sendErr)}`,

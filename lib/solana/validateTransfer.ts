@@ -126,3 +126,30 @@ export function validateSignedUsdcTransfer(
     };
   }
 }
+
+/**
+ * Bind a signed transaction to the exact prepared message bytes.
+ * Signatures may differ; the serializable message must match preparedTxBase64.
+ */
+export function assertSignedMatchesPrepared(
+  signedTx: Transaction,
+  preparedTxBase64: string,
+): { ok: true } | { ok: false; error: string } {
+  try {
+    const prepared = Transaction.from(Buffer.from(preparedTxBase64, "base64"));
+    const signedMsg = Buffer.from(signedTx.serializeMessage());
+    const preparedMsg = Buffer.from(prepared.serializeMessage());
+    if (signedMsg.length !== preparedMsg.length || !signedMsg.equals(preparedMsg)) {
+      return {
+        ok: false,
+        error: "Signed transaction message does not match preparedTxBase64",
+      };
+    }
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}

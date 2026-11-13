@@ -1,16 +1,10 @@
 import { Transaction } from "@solana/web3.js";
 import type { LedgerEntry } from "@/lib/ledger/types";
+import { csrfHeaders } from "./csrfStore";
 
 type PhantomLike = {
   signTransaction: (tx: Transaction) => Promise<Transaction>;
 };
-
-function csrfHeader(): HeadersInit {
-  if (typeof document === "undefined") return {};
-  const match = document.cookie.match(/(?:^|; )pd_csrf=([^;]*)/);
-  const csrf = match?.[1] ? decodeURIComponent(match[1]) : "";
-  return csrf ? { "x-csrf-token": csrf } : {};
-}
 
 export async function settleEntry(args: {
   entryId: string;
@@ -21,7 +15,7 @@ export async function settleEntry(args: {
   const prepareRes = await fetch("/api/settle/prepare", {
     method: "POST",
     credentials: "include",
-    headers: { "Content-Type": "application/json", ...csrfHeader() },
+    headers: { "Content-Type": "application/json", ...csrfHeaders() },
     body: JSON.stringify({
       entryId: args.entryId,
       selfPay: args.selfPay,
@@ -49,7 +43,7 @@ export async function settleEntry(args: {
   const confirmRes = await fetch("/api/settle/confirm", {
     method: "POST",
     credentials: "include",
-    headers: { "Content-Type": "application/json", ...csrfHeader() },
+    headers: { "Content-Type": "application/json", ...csrfHeaders() },
     body: JSON.stringify({
       entryId: args.entryId,
       prepareId: prepare.entry?.prepareId,
@@ -72,7 +66,7 @@ export async function approveEntry(
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
-      ...csrfHeader(),
+      ...csrfHeaders(),
     },
     body: JSON.stringify({ action: "approve", intentHash }),
   });

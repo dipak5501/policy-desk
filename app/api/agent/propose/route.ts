@@ -1,244 +1,117 @@
-import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-import {
-  demoScenarios,
-  getScenario,
-  type AgentScenarioId,
-} from "@/lib/agent/scenarios";
-import { getCatalogResource } from "@/lib/catalog/resources";
-import {
-  createLedgerEntry,
-  dailySpentBaseUnits,
-  setLedgerStatus,
-  syncTaskBudgetFromLedger,
-  taskRemainingBaseUnits,
-  tryReserveAgainstDailyCap,
-  withLedgerLock,
-} from "@/lib/ledger/store";
-import { getActivePolicy } from "@/lib/policy/active";
-import {
-  buildPaymentQuote,
-  proposalRiskScore,
-} from "@/lib/policy/regime";
-import {
-  reviewSpend,
-  withSessionPayee,
-  isAllowlisted,
-  SPL_TRANSFER_RESOURCE,
-} from "@/lib/policy/review";
+import { demoScenarios } from "@/lib/agent/scenarios";
+import { getTask, withLedgerLock } from "@/lib/ledger/store";
+import { evaluateCatalogPropose } from "@/lib/propose/evaluate";
 import { POLICY_VERSION } from "@/lib/policy/version";
-import { DEVNET_USDC_MINT, X402_DEVNET_NETWORK } from "@/lib/solana/config";
 import { appendAudit } from "@/lib/security/audit";
+import { assertCsrf, readWalletSession } from "@/lib/security/session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type Body = {
-  scenario?: AgentScenarioId;
+  resourceId?: string;
+  taskId?: string;
   label?: string;
-  resource?: string;
+  /** @deprecated Client overrides are rejected. */
   payee?: string;
   amountBaseUnits?: string;
   mint?: string;
-  settlementKind?: "spl_usdc" | "x402";
+  resource?: string;
+  settlementKind?: string;
+  scenario?: string;
   selfPay?: boolean;
-  dryRun?: boolean;
-  taskId?: string;
-  resourceId?: string;
   fromOwner?: string;
+  dryRun?: boolean;
 };
 
+/**
+ * Authenticated, catalog-bound propose.
+ * Client/model may only supply resourceId (+ optional taskId/label).
+ * Recipient, mint, price, origin, path, and settlement kind come from the server catalog.
+ */
 export async function POST(request: Request) {
   try {
-    return await withLedgerLock(async () => {
-      const body = (await request.json()) as Body;
-      const scenario = body.scenario ? getScenario(body.scenario) : undefined;
-      const catalog = body.resourceId
-        ? getCatalogResource(body.resourceId)
-        : undefined;
+    const wallet = readWalletSession(request);
+    if (!wallet) {
+      return NextResponse.json(
+        { error: "Wallet session required" },
+        { status: 401 },
+      );
+    }
+    if (!assertCsrf(request)) {
+      return NextResponse.json({ error: "CSRF validation failed" }, { status: 403 });
+    }
 
-      const label =
-        body.label ?? catalog?.title ?? scenario?.label ?? "Custom agent spend";
-      let resource =
-        body.resource ?? catalog?.resource ?? scenario?.resource;
-      const payee = body.payee ?? catalog?.payee ?? scenario?.payee;
-      const amountBaseUnits =
-        body.amountBaseUnits ??
-        catalog?.amountBaseUnits ??
-        scenario?.amountBaseUnits ??
-        "0";
-      const mint =
-        body.mint ?? catalog?.mint ?? scenario?.mint ?? DEVNET_USDC_MINT;
-      let settlementKind =
-        body.settlementKind ??
-        catalog?.settlementKind ??
-        scenario?.settlementKind ??
-        "spl_usdc";
+    const body = (await request.json()) as Body;
 
-      if (body.selfPay) {
-        resource = SPL_TRANSFER_RESOURCE;
-        settlementKind = "spl_usdc";
-        if (!payee) {
-          return NextResponse.json(
-            { error: "selfPay requires payee (connected wallet)" },
-            { status: 400 },
-          );
-        }
-      }
-
-      if (!resource || !payee) {
+    // Fail closed on client economic overrides
+    const forbiddenOverrides = [
+      "payee",
+      "amountBaseUnits",
+      "mint",
+      "resource",
+      "settlementKind",
+      "scenario",
+      "selfPay",
+      "fromOwner",
+    ] as const;
+    for (const key of forbiddenOverrides) {
+      if (body[key] !== undefined) {
         return NextResponse.json(
-          { error: "resource and payee are required" },
+          {
+            error: `Client override of ${key} is not allowed — catalog binding only`,
+            code: "client_override_rejected",
+          },
           { status: 400 },
         );
       }
+    }
 
-      const amount = BigInt(amountBaseUnits);
-      const base = getActivePolicy();
+    if (!body.resourceId || typeof body.resourceId !== "string") {
+      return NextResponse.json(
+        { error: "resourceId is required" },
+        { status: 400 },
+      );
+    }
 
-      if (!tryReserveAgainstDailyCap(amount, base.dailyCapBaseUnits)) {
+    if (body.taskId) {
+      const task = getTask(body.taskId);
+      if (!task) {
+        return NextResponse.json({ error: "Task not found" }, { status: 404 });
+      }
+      if (task.ownerWallet !== wallet) {
         return NextResponse.json(
-          {
-            error: "Insufficient remaining daily budget for this reservation",
-            code: "over_daily_cap",
-          },
+          { error: "Forbidden — task owned by another wallet" },
           { status: 403 },
         );
       }
+    }
 
-      if (body.taskId) {
-        const remaining = taskRemainingBaseUnits(body.taskId);
-        if (amount > remaining) {
-          return NextResponse.json(
-            {
-              error: "Insufficient remaining task budget",
-              code: "over_task_budget",
-              remainingBaseUnits: remaining.toString(),
-            },
-            { status: 403 },
-          );
-        }
-      }
-
-      const scenarioTag =
-        body.scenario ?? scenario?.scenario ?? ("custom" as const);
-      const quoteId = randomUUID();
-      const quoteExpiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-
-      const entry = createLedgerEntry({
-        label: body.dryRun ? `[dry-run] ${label}` : label,
-        resource,
-        payee,
-        amountBaseUnits,
-        mint,
-        settlementKind,
-        scenario: scenarioTag,
+    return await withLedgerLock(async () => {
+      const result = evaluateCatalogPropose({
+        resourceId: body.resourceId!,
         taskId: body.taskId,
-        resourceId: body.resourceId ?? catalog?.id,
-        network: X402_DEVNET_NETWORK,
-        policyVersion: POLICY_VERSION,
-        quoteId,
-        quoteExpiresAt,
-        fromOwner: body.fromOwner,
+        fromOwner: wallet,
+        label: body.label,
+        allowAdversarialFixture: false,
       });
 
-      const config =
-        body.selfPay || resource === SPL_TRANSFER_RESOURCE
-          ? withSessionPayee(base, payee)
-          : base;
-
-      const spendReq = {
-        id: entry.id,
-        label,
-        resource,
-        payee,
-        amountBaseUnits: amount,
-        mint,
-      };
-      // Include this entry's reservation in spent by evaluating after create
-      // but before marking reserved statuses — review against prior + this amount via dailySpent
-      // which already counts reserved statuses; entry is still "proposed" so subtract nothing extra.
-      const decision = reviewSpend(spendReq, config, dailySpentBaseUnits());
-      const quote = buildPaymentQuote({
-        amountBaseUnits: amount,
-        resource,
-        payee,
-        settlementKind,
-        mint,
-      });
-      const risk = proposalRiskScore({
-        amountBaseUnits: amount,
-        config,
-        decision,
-        resource,
-        allowlisted: isAllowlisted(spendReq, config),
-      });
-
-      setLedgerStatus(entry.id, "policy_evaluated", {
-        policyStatus: decision.status,
-        policyReason: decision.reason,
-        policyCode: decision.status === "block" ? decision.code : undefined,
-        quoteExpiresAt,
-        quoteId,
-      });
-
-      appendAudit("policy.decision", {
-        entryId: entry.id,
-        status: decision.status,
-        reason: decision.reason,
+      appendAudit("agent.propose", {
+        entryId: result.entry.id,
+        resourceId: body.resourceId,
+        taskId: body.taskId,
+        decision: result.decision.status,
+        reserved: result.reserved,
         dryRun: Boolean(body.dryRun),
-        risk,
         policyVersion: POLICY_VERSION,
       });
 
-      if (decision.status === "block") {
-        const blocked = setLedgerStatus(entry.id, "blocked", {
-          policyStatus: decision.status,
-          policyReason: decision.reason,
-          policyCode: decision.code,
-          settlementKind: "none",
-        });
-        if (body.taskId) syncTaskBudgetFromLedger(body.taskId);
-        return NextResponse.json({
-          entry: blocked,
-          decision,
-          quote,
-          risk,
-          next: "none",
-          dryRun: Boolean(body.dryRun),
-          policyVersion: POLICY_VERSION,
-        });
-      }
-
-      if (decision.status === "needs_approval") {
-        const pending = setLedgerStatus(entry.id, "awaiting_approval", {
-          policyStatus: decision.status,
-          policyReason: decision.reason,
-          approvalExpiresAt: quoteExpiresAt,
-        });
-        if (body.taskId) syncTaskBudgetFromLedger(body.taskId);
-        return NextResponse.json({
-          entry: pending,
-          decision,
-          quote,
-          risk,
-          next: "await_human_approval",
-          dryRun: Boolean(body.dryRun),
-          policyVersion: POLICY_VERSION,
-        });
-      }
-
-      const approved = setLedgerStatus(entry.id, "approved", {
-        policyStatus: decision.status,
-        policyReason: decision.reason,
-      });
-      if (body.taskId) syncTaskBudgetFromLedger(body.taskId);
       return NextResponse.json({
-        entry: approved,
-        decision,
-        quote,
-        risk,
-        next: body.dryRun ? "dry_run_complete" : "settle",
+        entry: result.entry,
+        decision: result.decision,
+        reserved: result.reserved,
+        next: body.dryRun && result.next === "settle" ? "dry_run_complete" : result.next,
         dryRun: Boolean(body.dryRun),
         policyVersion: POLICY_VERSION,
       });
@@ -252,5 +125,8 @@ export async function POST(request: Request) {
 }
 
 export async function GET() {
-  return NextResponse.json({ scenarios: demoScenarios() });
+  return NextResponse.json({
+    scenarios: demoScenarios(),
+    note: "POST /api/agent/propose is catalog-bound: supply resourceId (+ taskId). Client payee/amount/mint overrides are rejected.",
+  });
 }
