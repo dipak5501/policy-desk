@@ -34,11 +34,8 @@ type LedgerState = {
 };
 
 declare global {
-  // eslint-disable-next-line no-var
   var __policyDeskLedger: LedgerState | undefined;
-  // eslint-disable-next-line no-var
   var __policyDeskLedgerChain: Promise<unknown> | undefined;
-  // eslint-disable-next-line no-var
   var __policyDeskLedgerTestMode: boolean | undefined;
 }
 

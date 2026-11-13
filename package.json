@@ -7,7 +7,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "biome lint .",
     "test": "node --import tsx --test lib/policy/review.test.ts lib/policy/regime.test.ts lib/ledger/store.test.ts lib/security/adversarial.test.ts lib/security/session.test.ts lib/solana/validateTransfer.test.ts lib/agent/live.test.ts",
     "typecheck": "tsc --noEmit",
     "tunnel": "bash scripts/tunnel.sh start",
@@ -18,18 +18,19 @@
     "dev:public": "bash scripts/tunnel.sh start"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.5.0"
   },
   "dependencies": {
     "@solana/spl-token": "^0.4.13",
     "@solana/web3.js": "^1.98.4",
     "bs58": "^6.0.0",
-    "next": "^15.5.0",
+    "next": "^16.4.6",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "tweetnacl": "^1.0.3"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.6.7",
     "@types/node": "^22.15.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",

@@ -9,7 +9,6 @@ export type AuditEvent = {
 };
 
 declare global {
-  // eslint-disable-next-line no-var
   var __policyDeskAudit: AuditEvent[] | undefined;
 }
 
