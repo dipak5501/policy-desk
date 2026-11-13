@@ -85,7 +85,7 @@ CAIP-2 network: `solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1` (Devnet). Mint: Circle
 | Settle | `app/api/settle/prepare`, `confirm` | Re-check policy, simulate, template validate, bind prepareId; verify + broadcast + reconcile |
 | Solana | `lib/solana/*` | Connection, balances, TransferChecked build/**full template** validate |
 | x402 / delivery | `lib/x402/*`, resource routes | Quote, seller verify, settle-before-deliver, retry fulfillment without re-charge |
-| Ledger / budget | `lib/ledger/store` | Durable `.data/ledger.json`; atomic reservations; concurrency model documented |
+| Ledger / budget | `lib/ledger/store` + `lib/ledger/db` | Durable SQLite (`.data/ledger.sqlite`) with `BEGIN IMMEDIATE`; in-process lock for async only |
 | Audit | `lib/security/audit` | Append-only `.data/audit.jsonl` (server-controlled — not on-chain immutability) |
 | Streams | `app/api/streams/webhook` | Optional reconcile / unmatched-transfer flags (not ticker theater) |
 | Operator | `lib/security/operator` | Shared-secret gate (`OPERATOR_TOKEN`); never exposed to agent |
@@ -115,7 +115,7 @@ CAIP-2 network: `solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1` (Devnet). Mint: Circle
 | Boundary | Rule |
 |---|---|
 | Model → policy | Agent text never sets caps, mint, allowlists, operator creds, or arbitrary RPC/merchant URLs |
-| Browser → approvals | `x-operator-token` / Bearer must match `OPERATOR_TOKEN` (fail closed if unset) |
+| Browser → approvals | Operator HttpOnly session from `/api/operator/login` + CSRF from auth JSON (fail closed if `OPERATOR_TOKEN` unset) |
 | Browser → settle | Prepare re-runs policy + destination binding; confirm validates **full** permitted template |
 | Seller → desk | Exact amount, mint, payTo, signed transfer shape; delivery only after confirm |
 | Webhook → ledger | Streams verifies provider auth when configured; dedupe; else do not claim bounty |
@@ -150,7 +150,7 @@ CAIP-2 network: `solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1` (Devnet). Mint: Circle
 3. **Fixture mode labeled** — reliable demos without faking live models.  
 4. **Double policy check** — propose and prepare both call `reviewSpend`.  
 5. **Audit honesty** — local append-only ≠ independently immutable on-chain trail.  
-6. **Single-process ledger** — fine for hackathon demo; concurrency model must still be defined and tested.
+6. **SQLite ledger** — durable across process restart; prefer a single writer. Do not claim in-process `withLedgerLock` alone is cross-process protection.
 
 ## Related docs
 

@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
 import {
+  allowRate,
+  clientKey,
+  rateLimitResponse,
+  readJsonBody,
+} from "@/lib/security/httpLimits";
+import {
   issueOperatorSession,
   operatorConfigured,
   verifyOperatorPassword,
@@ -20,8 +26,18 @@ export async function POST(request: Request) {
       { status: 503 },
     );
   }
+  if (!allowRate(`op-login:${clientKey(request)}`, 10, 60_000)) {
+    return rateLimitResponse();
+  }
   try {
-    const body = (await request.json()) as { password?: string };
+    const parsed = await readJsonBody<{ password?: string }>(request, 4_096);
+    if (!parsed.ok) {
+      return NextResponse.json(
+        { error: parsed.error },
+        { status: parsed.status },
+      );
+    }
+    const body = parsed.body;
     if (!body.password || !verifyOperatorPassword(body.password)) {
       return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
     }

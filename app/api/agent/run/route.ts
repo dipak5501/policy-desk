@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 import { runFixtureStep } from "@/lib/agent/fixture";
 import { runLiveStep } from "@/lib/agent/live";
 import { getTask } from "@/lib/ledger/store";
+import {
+  allowRate,
+  clientKey,
+  rateLimitResponse,
+  readJsonBody,
+} from "@/lib/security/httpLimits";
 import { assertCsrf, readWalletSession } from "@/lib/security/session";
 
 export const runtime = "nodejs";
@@ -21,6 +27,9 @@ type Body = {
 
 export async function POST(request: Request) {
   try {
+    if (!allowRate(`agent-run:${clientKey(request)}`, 60, 60_000)) {
+      return rateLimitResponse();
+    }
     const wallet = readWalletSession(request);
     if (!wallet) {
       return NextResponse.json(
@@ -32,7 +41,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "CSRF validation failed" }, { status: 403 });
     }
 
-    const body = (await request.json()) as Body;
+    const parsed = await readJsonBody<Body>(request, 16_384);
+    if (!parsed.ok) {
+      return NextResponse.json(
+        { error: parsed.error },
+        { status: parsed.status },
+      );
+    }
+    const body = parsed.body;
     if (!body.taskId || !body.action) {
       return NextResponse.json(
         { error: "taskId and action are required" },

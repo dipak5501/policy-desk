@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
 import { appendStreamEvent, listStreamEvents } from "@/lib/ledger/store";
+import {
+  allowRate,
+  clientKey,
+  rateLimitResponse,
+  readJsonBody,
+} from "@/lib/security/httpLimits";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,6 +29,9 @@ function extractSignature(payload: unknown): string | undefined {
 
 function summarize(payload: unknown, signature?: string): string {
   if (signature) return `Stream hit · ${signature.slice(0, 8)}…`;
+  if (payload && typeof payload !== "object") {
+    return "Stream event received";
+  }
   if (payload && typeof payload === "object") {
     const keys = Object.keys(payload as object);
     return `Stream event · keys: ${keys.slice(0, 4).join(", ") || "empty"}`;
@@ -33,9 +42,13 @@ function summarize(payload: unknown, signature?: string): string {
 /**
  * QuickNode Streams webhook (UBC $500 bounty).
  * Verifies QUICKNODE_STREAM_WEBHOOK_SECRET when set.
+ * Ticker only — not payment reconcile.
  * @see docs/STREAMS.md
  */
 export async function POST(request: Request) {
+  if (!allowRate(`streams:${clientKey(request)}`, 120, 60_000)) {
+    return rateLimitResponse();
+  }
   const secret = process.env.QUICKNODE_STREAM_WEBHOOK_SECRET;
   if (secret) {
     const header =
@@ -47,7 +60,14 @@ export async function POST(request: Request) {
     }
   }
 
-  const payload = await request.json().catch(() => null);
+  const parsed = await readJsonBody<unknown>(request, 65_536);
+  if (!parsed.ok) {
+    return NextResponse.json(
+      { error: parsed.error },
+      { status: parsed.status },
+    );
+  }
+  const payload = parsed.body;
   const signature = extractSignature(payload);
   const event = appendStreamEvent({
     signature,
@@ -58,7 +78,7 @@ export async function POST(request: Request) {
   return NextResponse.json({
     ok: true,
     event,
-    note: "Streams event appended to Policy Desk feed",
+    note: "Streams event appended to Policy Desk feed (ticker only — not settle reconcile)",
   });
 }
 

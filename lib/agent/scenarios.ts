@@ -2,6 +2,7 @@ import {
   DEMO_BLOCKED_RESOURCE,
   DEMO_PAYEE,
   DEMO_X402_RESOURCE,
+  DEMO_X402_RESEARCH_RESOURCE,
 } from "@/lib/policy/config";
 import { DEVNET_USDC_MINT } from "@/lib/solana/config";
 import {
@@ -42,24 +43,24 @@ export function demoScenarios(): AgentProposal[] {
     {
       scenario: "approval_demo",
       label: "Needs approval — x402 above threshold",
-      resource: `${DEMO_X402_RESOURCE}?amount=${DEMO_APPROVAL_AMOUNT_BASE_UNITS}`,
+      resource: `${DEMO_X402_RESEARCH_RESOURCE}?amount=${DEMO_APPROVAL_AMOUNT_BASE_UNITS}`,
       payee: DEMO_PAYEE,
       amountBaseUnits: DEMO_APPROVAL_AMOUNT_BASE_UNITS,
       mint: DEVNET_USDC_MINT,
       settlementKind: "x402",
       rationale:
-        "Allowlisted x402 weather above the human-approval threshold. Desk must co-sign before settle.",
+        "Allowlisted deep research memo above the human-approval threshold. Desk must co-sign before settle.",
     },
     {
       scenario: "approved_demo",
-      label: "Approved — x402 weather under threshold",
+      label: "Approved — x402 weather brief under threshold",
       resource: DEMO_X402_RESOURCE,
       payee: DEMO_PAYEE,
       amountBaseUnits: DEFAULT_X402_PRICE_BASE_UNITS,
       mint: DEVNET_USDC_MINT,
       settlementKind: "x402",
       rationale:
-        "Allowlisted local x402 resource under per-tx and approval thresholds.",
+        "Allowlisted local x402 weather brief under per-tx and approval thresholds.",
     },
   ];
 }

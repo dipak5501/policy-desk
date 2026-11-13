@@ -1,23 +1,42 @@
 import { createHash } from "node:crypto";
-import { getCatalogResource } from "@/lib/catalog/resources";
+import {
+  catalogResourcePathPrefixes,
+  getCatalogResource,
+} from "@/lib/catalog/resources";
 import { getLedgerEntry, updateLedgerEntry } from "@/lib/ledger/store";
 import type { LedgerEntry } from "@/lib/ledger/types";
-import { DEMO_X402_RESOURCE } from "@/lib/policy/config";
 
-export type WeatherPayload = {
+export type PurchasedPayload = {
   ok: true;
   resource: string;
+  resourceId: string;
+  title: string;
   forecast: string;
+  content: string;
   paidAmount: string;
   resumed: true;
   entryId: string;
   contentDigest: string;
   note: string;
+  /** Honest label: demo catalog content, not a live oracle. */
+  demoCatalog: true;
   sampleContent: true;
 };
 
 function digestContent(body: string): string {
   return createHash("sha256").update(body).digest("hex");
+}
+
+function resourcePathMatchesCatalog(
+  entryResource: string,
+  catalogResource: string,
+): boolean {
+  const entryPath = entryResource.split("?")[0] ?? entryResource;
+  const catalogPath = catalogResource.split("?")[0] ?? catalogResource;
+  if (entryPath === catalogPath) return true;
+  return catalogResourcePathPrefixes().some(
+    (p) => entryPath === p || entryPath.startsWith(`${p}/`),
+  );
 }
 
 export type FulfillArgs = {
@@ -28,11 +47,11 @@ export type FulfillArgs = {
 };
 
 /**
- * Deliver weather sample content only for the rightful purchaser’s settled intent.
+ * Deliver demo-catalog content only for the rightful purchaser’s settled intent.
  * No “any matching settled payment” fallback.
  */
-export function fulfillWeatherIfSettled(args: FulfillArgs):
-  | { ok: true; body: WeatherPayload; entry: LedgerEntry }
+export function fulfillPurchasedIfSettled(args: FulfillArgs):
+  | { ok: true; body: PurchasedPayload; entry: LedgerEntry }
   | {
       ok: false;
       error: string;
@@ -77,15 +96,15 @@ export function fulfillWeatherIfSettled(args: FulfillArgs):
   if (!catalog || catalog.adversarialFixture) {
     return {
       ok: false,
-      error: "Intent is not bound to a purchasable weather product",
+      error: "Intent is not bound to a purchasable catalog product",
       code: "mismatch",
     };
   }
 
-  if (!entry.resource.startsWith(DEMO_X402_RESOURCE.split("?")[0]!)) {
+  if (!resourcePathMatchesCatalog(entry.resource, catalog.resource)) {
     return {
       ok: false,
-      error: "Resource path is not the weather merchant product",
+      error: "Resource path does not match catalog binding",
       code: "mismatch",
     };
   }
@@ -118,43 +137,60 @@ export function fulfillWeatherIfSettled(args: FulfillArgs):
     };
   }
 
+  const toPayload = (
+    content: string,
+    contentDigest: string,
+    note: string,
+  ): PurchasedPayload => ({
+    ok: true,
+    resource: catalog.id,
+    resourceId: catalog.id,
+    title: catalog.title,
+    forecast: content,
+    content,
+    paidAmount: entry.amountBaseUnits,
+    resumed: true,
+    entryId: entry.id,
+    contentDigest,
+    note,
+    demoCatalog: true,
+    sampleContent: true,
+  });
+
   // Idempotent re-delivery for rightful owner
   if (entry.deliveredResource && entry.contentDigest) {
-    const body: WeatherPayload = {
+    return {
       ok: true,
-      resource: "weather",
-      forecast: entry.deliveredResource,
-      paidAmount: entry.amountBaseUnits,
-      resumed: true,
-      entryId: entry.id,
-      contentDigest: entry.contentDigest,
-      note: "Re-delivered without re-charging.",
-      sampleContent: true,
+      body: toPayload(
+        entry.deliveredResource,
+        entry.contentDigest,
+        "Re-delivered without re-charging.",
+      ),
+      entry,
     };
-    return { ok: true, body, entry };
   }
 
-  const forecast =
-    "[SAMPLE CONTENT — not live weather] Clear skies on Solana Devnet sample brief for the research agent. Wind calm; visibility high. Team-operated merchant fixture.";
-  const contentDigest = digestContent(forecast);
+  const content = catalog.paidBody;
+  const contentDigest = digestContent(content);
 
   const updated = updateLedgerEntry(entry.id, {
-    deliveredResource: forecast,
+    deliveredResource: content,
     contentDigest,
     deliveryStatus: "delivered",
     paymentResponse: "x402-fulfilled",
   });
 
-  const body: WeatherPayload = {
+  return {
     ok: true,
-    resource: "weather",
-    forecast,
-    paidAmount: entry.amountBaseUnits,
-    resumed: true,
-    entryId: updated.id,
-    contentDigest,
-    note: "Sample content delivered after verified settlement for this intent only.",
-    sampleContent: true,
+    body: toPayload(
+      content,
+      contentDigest,
+      "Demo catalog content delivered after verified settlement for this intent only.",
+    ),
+    entry: updated,
   };
-  return { ok: true, body, entry: updated };
 }
+
+/** @deprecated Prefer fulfillPurchasedIfSettled — kept for call-site compatibility. */
+export const fulfillWeatherIfSettled = fulfillPurchasedIfSettled;
+export type WeatherPayload = PurchasedPayload;

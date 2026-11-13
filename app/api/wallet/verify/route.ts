@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 import nacl from "tweetnacl";
 import bs58 from "bs58";
 import {
+  allowRate,
+  clientKey,
+  rateLimitResponse,
+  readJsonBody,
+} from "@/lib/security/httpLimits";
+import {
   consumeWalletChallenge,
   getWalletChallenge,
   issueWalletSession,
@@ -17,13 +23,23 @@ export const dynamic = "force-dynamic";
  * Nonce is consumed only after successful verification.
  */
 export async function POST(request: Request) {
+  if (!allowRate(`wallet-verify:${clientKey(request)}`, 20, 60_000)) {
+    return rateLimitResponse();
+  }
   try {
-    const body = (await request.json()) as {
+    const parsed = await readJsonBody<{
       wallet?: string;
       nonce?: string;
       message?: string;
       signatureBase58?: string;
-    };
+    }>(request, 8_192);
+    if (!parsed.ok) {
+      return NextResponse.json(
+        { error: parsed.error },
+        { status: parsed.status },
+      );
+    }
+    const body = parsed.body;
     if (!body.wallet || !body.nonce || !body.signatureBase58) {
       return NextResponse.json(
         { error: "wallet, nonce, signatureBase58 required" },

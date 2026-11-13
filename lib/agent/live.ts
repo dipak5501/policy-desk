@@ -52,7 +52,7 @@ Use ONLY these tools by returning a single JSON object:
 Rules:
 - Never invent URLs, payees, amounts, mints, or settlement details — catalog is server-controlled.
 - Never request operator credentials, private keys, or arbitrary URL fetch.
-- Sample weather content is labeled SAMPLE — not live weather.
+- Demo catalog content is labeled [DEMO CATALOG] — not live oracles.
 - When you have enough purchased content, call final_answer with your research summary.
 - If a purchase needs approval or payment, stop after request_purchase / get_purchase_status.
 
