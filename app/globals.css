@@ -755,6 +755,95 @@ a {
   max-width: 40rem;
 }
 
+.fixture-banner {
+  margin: 0.75rem 0 0;
+  padding: 0.55rem 0.75rem;
+  border-radius: 8px;
+  background: var(--warn-soft);
+  color: var(--ink);
+  font-size: 0.9rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0.75rem 0;
+}
+
+.field span {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.field textarea,
+.field input {
+  font: inherit;
+  padding: 0.65rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--panel-solid);
+  color: var(--ink);
+  resize: vertical;
+}
+
+.catalog-list,
+.timeline,
+.approval-list {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.catalog-list li,
+.timeline li,
+.approval-card {
+  padding: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.timeline {
+  gap: 0.55rem;
+}
+
+.timeline li strong {
+  display: inline-block;
+  margin-left: 0.5rem;
+}
+
+.answer-card {
+  margin-top: 1rem;
+  padding: 0.85rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--ok-soft);
+}
+
+.answer-card pre {
+  white-space: pre-wrap;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  margin: 0.5rem 0 0;
+}
+
+.timeline details {
+  margin-top: 0.35rem;
+}
+
+.timeline pre {
+  overflow: auto;
+  max-height: 12rem;
+  font-size: 0.75rem;
+}
+
 .warn {
   color: var(--warn);
 }

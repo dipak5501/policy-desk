@@ -47,10 +47,12 @@
 3. **Destination binding at settle** — payee must be allowlisted **or** equal the spending wallet on an allowlisted resource (pay-self demo).
 4. **Signed tx matches intent** — confirm decodes TransferChecked (mint, amount, ATAs, authority) before treating settle as valid; signature-only confirm is rejected.
 5. **Human gate above threshold** — `needs_approval` requires operator Approve before prepare/sign.
-6. **Budget reservation** — pending / approved / ready_to_sign / confirming / settled count toward the daily cap.
-7. **Replay resistance (desk-level)** — settled entries cannot be settled again; prepare binds `prepareId` + expiry.
-8. **Devnet lock** — refuse mainnet cluster/RPC configuration.
-9. **Audit log** — status transitions append to durable audit trail (best-effort `.data/audit.jsonl`).
+6. **Budget reservation** — reserved statuses hold daily/task budget; reject/block/cancel releases once; confirmed spend is separate; in-process mutex serializes reserves.
+7. **Replay resistance (desk-level)** — settled entries cannot be settled again; prepare binds `prepareId` + expiry; confirming+signature must reconcile before re-prepare.
+8. **Settle-before-deliver** — x402 weather content is gated on ledger `settled`; re-delivery does not re-charge.
+9. **Devnet lock** — refuse mainnet cluster/RPC configuration.
+10. **Audit log** — status transitions append to durable server-controlled audit trail (best-effort `.data/audit.jsonl`). This is **not** an independently immutable on-chain audit trail.
+11. **Catalog binding** — agents request `resourceId` resolved server-side; arbitrary merchant URLs are not trusted as allowlist keys from the model.
 
 ## Honest limitations
 
@@ -61,7 +63,9 @@
 | No on-chain policy program | Caps live in the Next.js process, not an Anchor vault |
 | Safety model is block-before-sign | No escrow PDA locks funds; honesty over custody theater |
 | x402 seller is a local demo facilitator | Not a hosted facilitator / compliance network |
-| Streams webhook | Secret must be set for untrusted internet exposure; optional bounty path |
+| Streams webhook | Ticker only — not payment reconcile; do not claim Streams bounty yet |
+| Fixture agent | Deterministic tools labeled in UI — not a live model |
+| File-store concurrency | Mutex is single-process only; not multi-instance safe |
 | Phantom UX | User can still sign unrelated txs outside this desk |
 | Public tunnel / deploy URL | Anyone with the URL + operator token can hit approval APIs — rotate token for public demos |
 | RPC / faucet availability | External dependency; dry-run still shows policy path if chain is down |

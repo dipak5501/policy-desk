@@ -62,14 +62,36 @@ export async function POST(request: Request) {
     }
     if (entry.status === "settled") {
       return NextResponse.json(
-        { error: "Entry already settled — replay denied" },
+        {
+          error: "Entry already settled — replay denied",
+          entry,
+          idempotent: true,
+        },
         { status: 409 },
       );
     }
     if (entry.status === "confirming") {
+      // Uncertain settlement: do not create a replacement until reconciled
       return NextResponse.json(
-        { error: "Entry is already confirming on-chain" },
+        {
+          error:
+            entry.signature
+              ? "Entry has an in-flight signature — reconcile via confirm before re-preparing"
+              : "Entry is already confirming on-chain",
+          entry,
+          signature: entry.signature,
+        },
         { status: 409 },
+      );
+    }
+    if (
+      entry.quoteExpiresAt &&
+      Date.parse(entry.quoteExpiresAt) < Date.now()
+    ) {
+      setLedgerStatus(entry.id, "failed", { error: "Quote expired" });
+      return NextResponse.json(
+        { error: "Quote expired — re-propose for a fresh quote" },
+        { status: 410 },
       );
     }
     if (["pending", "awaiting_approval"].includes(entry.status)) {
@@ -165,6 +187,23 @@ export async function POST(request: Request) {
       const req = selectExactUsdcRequirement(challenge, entry.amountBaseUnits);
       amount = BigInt(requirementAmount(req));
       toOwner = req.payTo;
+      // Bind quote to immutable intent — reject drift
+      if (amount !== BigInt(entry.amountBaseUnits)) {
+        return NextResponse.json(
+          {
+            error: `x402 quote amount ${amount} does not match intent ${entry.amountBaseUnits}`,
+          },
+          { status: 409 },
+        );
+      }
+      if (toOwner !== entry.payee) {
+        return NextResponse.json(
+          {
+            error: `x402 payTo ${toOwner} does not match intent payee ${entry.payee}`,
+          },
+          { status: 409 },
+        );
+      }
     }
 
     const built = await buildUsdcTransfer({

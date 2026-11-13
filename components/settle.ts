@@ -59,6 +59,7 @@ export async function settleEntry(args: {
 export async function approveEntry(
   entryId: string,
   operatorToken: string,
+  intentHash?: string,
 ): Promise<LedgerEntry> {
   const res = await fetch(`/api/approvals/${entryId}`, {
     method: "POST",
@@ -66,7 +67,7 @@ export async function approveEntry(
       "Content-Type": "application/json",
       "x-operator-token": operatorToken,
     },
-    body: JSON.stringify({ action: "approve" }),
+    body: JSON.stringify({ action: "approve", intentHash }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? "Approve failed");

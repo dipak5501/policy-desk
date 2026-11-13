@@ -2,16 +2,26 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import { appendAudit } from "@/lib/security/audit";
+import { POLICY_VERSION } from "@/lib/policy/version";
+import { X402_DEVNET_NETWORK } from "@/lib/solana/config";
 import type {
+  BudgetSnapshot,
   CreateLedgerInput,
   LedgerEntry,
   PaymentStatus,
+  ResearchTask,
   StreamEvent,
+  TimelineEvent,
 } from "./types";
-import { IMMUTABLE_INTENT_FIELDS } from "./types";
+import {
+  CONFIRMED_STATUSES,
+  IMMUTABLE_INTENT_FIELDS,
+  RESERVED_STATUSES,
+} from "./types";
 
 type LedgerState = {
   entries: Map<string, LedgerEntry>;
+  tasks: Map<string, ResearchTask>;
   streamEvents: StreamEvent[];
   loaded: boolean;
 };
@@ -19,20 +29,39 @@ type LedgerState = {
 declare global {
   // eslint-disable-next-line no-var
   var __policyDeskLedger: LedgerState | undefined;
+  // eslint-disable-next-line no-var
+  var __policyDeskLedgerChain: Promise<unknown> | undefined;
 }
 
 function state(): LedgerState {
   if (!globalThis.__policyDeskLedger) {
     globalThis.__policyDeskLedger = {
       entries: new Map(),
+      tasks: new Map(),
       streamEvents: [],
       loaded: false,
     };
   }
   const s = globalThis.__policyDeskLedger;
-  // Hot-reload / older process state may lack streamEvents.
   if (!Array.isArray(s.streamEvents)) s.streamEvents = [];
+  if (!(s.tasks instanceof Map)) s.tasks = new Map();
   return s;
+}
+
+/** Serialize mutations in-process (Node is single-threaded; this covers async interleaving). */
+export async function withLedgerLock<T>(fn: () => T | Promise<T>): Promise<T> {
+  const prev = globalThis.__policyDeskLedgerChain ?? Promise.resolve();
+  let release!: () => void;
+  const gate = new Promise<void>((r) => {
+    release = r;
+  });
+  globalThis.__policyDeskLedgerChain = prev.then(() => gate);
+  await prev;
+  try {
+    return await fn();
+  } finally {
+    release();
+  }
 }
 
 function dataPath(): string {
@@ -52,6 +81,12 @@ function intentHash(input: CreateLedgerInput): string {
     mint: input.mint,
     settlementKind: input.settlementKind ?? "spl_usdc",
     scenario: input.scenario ?? null,
+    taskId: input.taskId ?? null,
+    resourceId: input.resourceId ?? null,
+    network: input.network ?? X402_DEVNET_NETWORK,
+    policyVersion: input.policyVersion ?? POLICY_VERSION,
+    quoteId: input.quoteId ?? null,
+    fromOwner: input.fromOwner ?? null,
   });
   return createHash("sha256").update(payload).digest("hex");
 }
@@ -61,11 +96,14 @@ function persist(): void {
     const dir = path.dirname(dataPath());
     mkdirSync(dir, { recursive: true });
     const s = state();
-    const list = [...s.entries.values()];
     writeFileSync(
       dataPath(),
       JSON.stringify(
-        { entries: list, streamEvents: s.streamEvents.slice(0, 200) },
+        {
+          entries: [...s.entries.values()],
+          tasks: [...s.tasks.values()],
+          streamEvents: s.streamEvents.slice(0, 200),
+        },
         null,
         2,
       ),
@@ -85,10 +123,14 @@ function ensureLoaded(): void {
     const raw = readFileSync(dataPath(), "utf8");
     const parsed = JSON.parse(raw) as {
       entries?: LedgerEntry[];
+      tasks?: ResearchTask[];
       streamEvents?: StreamEvent[];
     };
     for (const entry of parsed.entries ?? []) {
       s.entries.set(entry.id, entry);
+    }
+    for (const task of parsed.tasks ?? []) {
+      s.tasks.set(task.id, task);
     }
     if (Array.isArray(parsed.streamEvents)) {
       s.streamEvents.push(...parsed.streamEvents);
@@ -110,6 +152,16 @@ export function getLedgerEntry(id: string): LedgerEntry | undefined {
   return state().entries.get(id);
 }
 
+export function findLedgerBySignature(
+  signature: string,
+): LedgerEntry | undefined {
+  ensureLoaded();
+  for (const e of state().entries.values()) {
+    if (e.signature === signature) return e;
+  }
+  return undefined;
+}
+
 export function createLedgerEntry(input: CreateLedgerInput): LedgerEntry {
   ensureLoaded();
   const ts = nowIso();
@@ -126,6 +178,14 @@ export function createLedgerEntry(input: CreateLedgerInput): LedgerEntry {
     settlementKind: input.settlementKind ?? "spl_usdc",
     intentHash: intentHash(input),
     scenario: input.scenario,
+    taskId: input.taskId,
+    resourceId: input.resourceId,
+    network: input.network ?? X402_DEVNET_NETWORK,
+    policyVersion: input.policyVersion ?? POLICY_VERSION,
+    quoteExpiresAt: input.quoteExpiresAt,
+    quoteId: input.quoteId,
+    fromOwner: input.fromOwner,
+    reservationReleased: false,
   };
   state().entries.set(entry.id, entry);
   persist();
@@ -133,6 +193,7 @@ export function createLedgerEntry(input: CreateLedgerInput): LedgerEntry {
     entryId: entry.id,
     label: entry.label,
     amountBaseUnits: entry.amountBaseUnits,
+    taskId: entry.taskId,
   });
   return entry;
 }
@@ -174,6 +235,20 @@ export function setLedgerStatus(
   patch: Partial<LedgerEntry> = {},
 ): LedgerEntry {
   const next = updateLedgerEntry(id, { ...patch, status });
+  if (
+    ["rejected", "cancelled", "blocked", "failed"].includes(status) &&
+    !next.reservationReleased
+  ) {
+    const released = updateLedgerEntry(id, { reservationReleased: true });
+    appendAudit("ledger.release", { entryId: id, status });
+    appendAudit("ledger.status", {
+      entryId: id,
+      status,
+      policyStatus: released.policyStatus,
+      policyCode: released.policyCode,
+    });
+    return released;
+  }
   appendAudit("ledger.status", {
     entryId: id,
     status,
@@ -183,20 +258,170 @@ export function setLedgerStatus(
   return next;
 }
 
-/** Pending + settled count against daily cap (honest reservation). */
-export function dailySpentBaseUnits(): bigint {
+/** Amounts held against daily/task caps (not released). */
+export function reservedBaseUnits(taskId?: string): bigint {
   ensureLoaded();
   let total = 0n;
   for (const e of state().entries.values()) {
-    if (
-      ["pending", "awaiting_approval", "approved", "ready_to_sign", "confirming", "settled"].includes(
-        e.status,
-      )
-    ) {
+    if (taskId && e.taskId !== taskId) continue;
+    if (e.reservationReleased) continue;
+    if (RESERVED_STATUSES.includes(e.status)) {
       total += BigInt(e.amountBaseUnits);
     }
   }
   return total;
+}
+
+export function confirmedBaseUnits(taskId?: string): bigint {
+  ensureLoaded();
+  let total = 0n;
+  for (const e of state().entries.values()) {
+    if (taskId && e.taskId !== taskId) continue;
+    if (CONFIRMED_STATUSES.includes(e.status)) {
+      total += BigInt(e.amountBaseUnits);
+    }
+  }
+  return total;
+}
+
+/** Pending + settled count against daily cap (honest reservation). */
+export function dailySpentBaseUnits(): bigint {
+  return reservedBaseUnits() + confirmedBaseUnits();
+}
+
+export function budgetSnapshot(dailyCapBaseUnits: bigint): BudgetSnapshot {
+  const reserved = reservedBaseUnits();
+  const confirmed = confirmedBaseUnits();
+  const used = reserved + confirmed;
+  const remaining =
+    dailyCapBaseUnits > used ? dailyCapBaseUnits - used : 0n;
+  return {
+    availableBaseUnits: remaining.toString(),
+    reservedBaseUnits: reserved.toString(),
+    confirmedBaseUnits: confirmed.toString(),
+    remainingBaseUnits: remaining.toString(),
+    dailyCapBaseUnits: dailyCapBaseUnits.toString(),
+  };
+}
+
+/**
+ * Atomically reserve against daily cap. Returns null if insufficient.
+ * Call inside withLedgerLock for concurrent safety.
+ */
+export function tryReserveAgainstDailyCap(
+  amountBaseUnits: bigint,
+  dailyCapBaseUnits: bigint,
+): boolean {
+  const used = dailySpentBaseUnits();
+  return used + amountBaseUnits <= dailyCapBaseUnits;
+}
+
+export function createTask(input: {
+  prompt: string;
+  budgetBaseUnits: string;
+}): ResearchTask {
+  ensureLoaded();
+  const ts = nowIso();
+  const task: ResearchTask = {
+    id: randomUUID(),
+    createdAt: ts,
+    updatedAt: ts,
+    prompt: input.prompt,
+    budgetBaseUnits: input.budgetBaseUnits,
+    reservedBaseUnits: "0",
+    spentBaseUnits: "0",
+    status: "running",
+    mode: "fixture",
+    timeline: [
+      {
+        id: randomUUID(),
+        ts,
+        kind: "task.started",
+        message: `Task started with budget ${input.budgetBaseUnits} base units (fixture mode).`,
+      },
+    ],
+  };
+  state().tasks.set(task.id, task);
+  persist();
+  appendAudit("task.create", {
+    taskId: task.id,
+    budgetBaseUnits: task.budgetBaseUnits,
+  });
+  return task;
+}
+
+export function getTask(id: string): ResearchTask | undefined {
+  ensureLoaded();
+  return state().tasks.get(id);
+}
+
+export function listTasks(): ResearchTask[] {
+  ensureLoaded();
+  return [...state().tasks.values()].sort((a, b) =>
+    a.createdAt < b.createdAt ? 1 : -1,
+  );
+}
+
+export function appendTaskEvent(
+  taskId: string,
+  event: Omit<TimelineEvent, "id" | "ts"> & { id?: string; ts?: string },
+): ResearchTask {
+  ensureLoaded();
+  const task = state().tasks.get(taskId);
+  if (!task) throw new Error(`Task ${taskId} not found`);
+  const nextEvent: TimelineEvent = {
+    id: event.id ?? randomUUID(),
+    ts: event.ts ?? nowIso(),
+    kind: event.kind,
+    message: event.message,
+    entryId: event.entryId,
+    meta: event.meta,
+  };
+  const next: ResearchTask = {
+    ...task,
+    updatedAt: nowIso(),
+    timeline: [...task.timeline, nextEvent],
+  };
+  state().tasks.set(taskId, next);
+  persist();
+  return next;
+}
+
+export function updateTask(
+  taskId: string,
+  patch: Partial<ResearchTask>,
+): ResearchTask {
+  ensureLoaded();
+  const task = state().tasks.get(taskId);
+  if (!task) throw new Error(`Task ${taskId} not found`);
+  const next: ResearchTask = {
+    ...task,
+    ...patch,
+    id: task.id,
+    createdAt: task.createdAt,
+    updatedAt: nowIso(),
+    timeline: patch.timeline ?? task.timeline,
+  };
+  state().tasks.set(taskId, next);
+  persist();
+  return next;
+}
+
+export function syncTaskBudgetFromLedger(taskId: string): ResearchTask {
+  const reserved = reservedBaseUnits(taskId);
+  const spent = confirmedBaseUnits(taskId);
+  return updateTask(taskId, {
+    reservedBaseUnits: reserved.toString(),
+    spentBaseUnits: spent.toString(),
+  });
+}
+
+export function taskRemainingBaseUnits(taskId: string): bigint {
+  const task = getTask(taskId);
+  if (!task) return 0n;
+  const budget = BigInt(task.budgetBaseUnits);
+  const used = reservedBaseUnits(taskId) + confirmedBaseUnits(taskId);
+  return budget > used ? budget - used : 0n;
 }
 
 export function appendStreamEvent(input: {
@@ -232,7 +457,9 @@ export function listStreamEvents(limit = 40): StreamEvent[] {
 export function resetLedgerForTests(): void {
   globalThis.__policyDeskLedger = {
     entries: new Map(),
+    tasks: new Map(),
     streamEvents: [],
     loaded: true,
   };
+  globalThis.__policyDeskLedgerChain = Promise.resolve();
 }

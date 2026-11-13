@@ -1,13 +1,12 @@
-# QuickNode Streams (optional UBC $500 bounty)
+# QuickNode Streams (incomplete for bounty)
 
-Streams feeds Solana Devnet USDC activity into Policy Desk so judges see an
-**on-chain audit trail** next to policy decisions.
+**Status: incomplete for the QuickNode Streams bounty.** The webhook can animate the LIVE ticker. It does **not** yet reconcile known payments, flag unmatched outgoing transfers, or prove provider-authenticated delivery delay. A manually posted webhook payload does **not** prove QuickNode integration. Do not claim the bounty until reconcile ships.
 
-## What shipped
+## What shipped (ticker only)
 
-1. `POST /api/streams/webhook` — verifies `QUICKNODE_STREAM_WEBHOOK_SECRET`, appends events to the durable ledger feed.
+1. `POST /api/streams/webhook` — verifies `QUICKNODE_STREAM_WEBHOOK_SECRET` when set; appends events to the durable feed.
 2. `GET /api/streams/webhook` — returns recent stream events for the LIVE ticker.
-3. Desk **LIVE** ticker shows `stream` hits alongside blocked / settled ledger rows.
+3. Desk **LIVE** ticker shows `stream` hits alongside ledger rows (display only).
 
 ## Configure
 
