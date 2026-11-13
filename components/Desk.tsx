@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { LedgerEntry } from "@/lib/ledger/types";
+import type { LedgerEntry, StreamEvent } from "@/lib/ledger/types";
 import type { AgentProposal } from "@/lib/agent/scenarios";
 import { formatSol, formatUsdc, shortKey } from "@/lib/format";
 import { WalletProvider, useWallet } from "./WalletProvider";
@@ -9,6 +9,8 @@ import { TrustStrip } from "./TrustStrip";
 import { TeamStrip } from "./TeamStrip";
 import { PaymentProgress } from "./PaymentProgress";
 import { ReceiptCard } from "./ReceiptCard";
+import { EventTicker } from "./EventTicker";
+import { ResourceStrip } from "./ResourceStrip";
 import { approveEntry, settleEntry } from "./settle";
 
 type PolicyPayload = {
@@ -51,6 +53,7 @@ function DeskInner() {
   const [policy, setPolicy] = useState<PolicyPayload | null>(null);
   const [balances, setBalances] = useState<Balances | null>(null);
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
+  const [streamEvents, setStreamEvents] = useState<StreamEvent[]>([]);
   const [audit, setAudit] = useState<PolicyPayload["audit"]>([]);
   const [scenarios, setScenarios] = useState<AgentProposal[]>([]);
   const [focus, setFocus] = useState<LedgerEntry | null>(null);
@@ -63,15 +66,17 @@ function DeskInner() {
     process.env.NEXT_PUBLIC_OPERATOR_TOKEN ?? "policy-desk-dev-operator";
 
   const refresh = useCallback(async () => {
-    const [p, l, s] = await Promise.all([
+    const [p, l, s, streams] = await Promise.all([
       fetch("/api/policy").then((r) => r.json()),
       fetch("/api/ledger").then((r) => r.json()),
       fetch("/api/agent/propose").then((r) => r.json()),
+      fetch("/api/streams/webhook").then((r) => r.json()).catch(() => ({ events: [] })),
     ]);
     setPolicy(p);
     setEntries(l.entries ?? []);
     setAudit(l.audit ?? p.audit ?? []);
     setScenarios(s.scenarios ?? []);
+    setStreamEvents(streams.events ?? []);
     if (address) {
       const b = await fetch(`/api/balances?address=${address}`).then((r) =>
         r.json(),
@@ -240,7 +245,6 @@ function DeskInner() {
           ...mid.entry,
           status: "approved" as const,
         };
-        // Re-fetch after approve
         await refresh();
         const latest = (await fetch("/api/ledger").then((r) => r.json()))
           .entries as LedgerEntry[];
@@ -258,12 +262,15 @@ function DeskInner() {
   return (
     <div className="desk-shell">
       <div className="atmosphere" aria-hidden>
+        <div className="atm-wash" />
         <div className="atm-grid" />
-        <div className="atm-glow" />
+        <div className="atm-band" />
       </div>
 
       <header className="hero">
-        <p className="eyebrow">UBC Hackathon 2026 · Solana · Agentic Payments</p>
+        <p className="eyebrow">
+          UBC Hackathon 2026 · Agentic Payments · Best use of Solana
+        </p>
         <h1 className="brand">Policy Desk</h1>
         <p className="lede">
           Agents propose. Policy decides. Humans approve. Solana settles.
@@ -310,8 +317,14 @@ function DeskInner() {
               <span className="warn"> · low SOL for fees</span>
             ) : null}
           </p>
-        ) : null}
+        ) : (
+          <p className="wallet-line muted">
+            Phantom on Devnet · fund via faucet.solana.com + faucet.circle.com
+          </p>
+        )}
       </header>
+
+      <EventTicker entries={entries} streamEvents={streamEvents} />
 
       {policy ? (
         <TrustStrip
@@ -323,169 +336,197 @@ function DeskInner() {
         />
       ) : null}
 
-      <section className="panel posture">
-        <h2>Treasury posture</h2>
-        {policy ? (
-          <>
-            <p className={`regime regime-${policy.regime.regime}`}>
+      {policy ? (
+        <section className="metrics" aria-label="Treasury metrics">
+          <div className="metric">
+            <span className="metric-k">Posture</span>
+            <strong className={`regime regime-${policy.regime.regime}`}>
               {policy.regime.label}
+            </strong>
+            <p className="metric-note">{policy.regime.explain}</p>
+          </div>
+          <div className="metric">
+            <span className="metric-k">Daily remaining</span>
+            <strong className="metric-v mono">
+              {formatUsdc(policy.regime.remainingBaseUnits)} USDC
+            </strong>
+            <p className="metric-note">
+              Cap {formatUsdc(policy.policy.dailyCapBaseUnits)} · spent{" "}
+              {formatUsdc(policy.dailySpentBaseUnits)}
             </p>
-            <p className="muted">{policy.regime.explain}</p>
-            <ul className="meta-list">
-              <li>
-                Per-tx cap {formatUsdc(policy.policy.perTxCapBaseUnits)} USDC
-              </li>
-              <li>
-                Daily cap {formatUsdc(policy.policy.dailyCapBaseUnits)} USDC ·
-                spent {formatUsdc(policy.dailySpentBaseUnits)}
-              </li>
-              <li>
-                Human approval above{" "}
-                {formatUsdc(policy.policy.approvalThresholdBaseUnits)} USDC
-              </li>
-              <li>{policy.trust.escrowNote}</li>
-            </ul>
-          </>
-        ) : (
-          <p className="muted">Loading policy…</p>
-        )}
-      </section>
+          </div>
+          <div className="metric">
+            <span className="metric-k">Per-tx / approval</span>
+            <strong className="metric-v mono">
+              {formatUsdc(policy.policy.perTxCapBaseUnits)} /{" "}
+              {formatUsdc(policy.policy.approvalThresholdBaseUnits)}
+            </strong>
+            <p className="metric-note">
+              Human gate above threshold · {policy.trust.escrowNote}
+            </p>
+          </div>
+          <div className="metric">
+            <span className="metric-k">Wallet</span>
+            <strong className="metric-v mono">
+              {balances
+                ? `${formatSol(balances.sol)} SOL · ${formatUsdc(balances.usdcBaseUnits)} USDC`
+                : address
+                  ? "loading…"
+                  : "—"}
+            </strong>
+            <p className="metric-note">
+              Devnet mint {shortKey(policy.trust.mint, 4)}
+            </p>
+          </div>
+        </section>
+      ) : (
+        <p className="muted loading-line">Loading policy…</p>
+      )}
 
-      <section className="panel ops">
-        <h2>Agent proposals</h2>
-        <p className="muted">
-          Scripted scenarios for the judge path — no LLM required.
-        </p>
-        <div className="scenario-grid">
-          {scenarios.map((s) => (
-            <article key={s.scenario} className="scenario">
-              <h3>{s.label}</h3>
-              <p>{s.rationale}</p>
-              <p className="mono">
-                {formatUsdc(s.amountBaseUnits)} USDC · {s.settlementKind}
-              </p>
-              <div className="cta-row">
-                <button
-                  className="btn"
-                  disabled={busy}
-                  onClick={() => void propose(s)}
-                >
-                  Propose
-                </button>
-                <button
-                  className="btn ghost"
-                  disabled={busy}
-                  onClick={() => void propose(s, { dryRun: true })}
-                >
-                  Dry-run
-                </button>
-                {s.scenario !== "blocked_demo" && address ? (
+      <div className="desk-grid">
+        <section className="panel ops">
+          <h2>Agent proposals</h2>
+          <p className="muted">
+            Scripted judge path — blocked drain, then approve + settle. No LLM
+            required.
+          </p>
+          <div className="scenario-grid">
+            {scenarios.map((s) => (
+              <article key={s.scenario} className="scenario">
+                <h3>{s.label}</h3>
+                <p>{s.rationale}</p>
+                <p className="mono">
+                  {formatUsdc(s.amountBaseUnits)} USDC · {s.settlementKind}
+                </p>
+                <div className="cta-row">
+                  <button
+                    className="btn"
+                    disabled={busy}
+                    onClick={() => void propose(s)}
+                  >
+                    Propose
+                  </button>
                   <button
                     className="btn ghost"
                     disabled={busy}
-                    onClick={() => void propose(s, { selfPay: true })}
+                    onClick={() => void propose(s, { dryRun: true })}
                   >
-                    Propose → self-pay
+                    Dry-run
                   </button>
-                ) : null}
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="panel approvals" id="approvals">
-        <h2>Human approval</h2>
-        <p className="muted">
-          SeaPay-style pause: above-threshold spends wait here until OK.
-        </p>
-        {pending.length === 0 ? (
-          <p className="muted">No spends awaiting approval.</p>
-        ) : (
-          <ul className="approval-list">
-            {pending.map((e) => (
-              <li key={e.id}>
-                <div>
-                  <strong>{e.label}</strong>
-                  <p className="mono">
-                    {formatUsdc(e.amountBaseUnits)} USDC · {e.policyReason}
-                  </p>
+                  {s.scenario !== "blocked_demo" && address ? (
+                    <button
+                      className="btn ghost"
+                      disabled={busy}
+                      onClick={() => void propose(s, { selfPay: true })}
+                    >
+                      Self-pay
+                    </button>
+                  ) : null}
                 </div>
-                <div className="cta-row">
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <div className="desk-stack">
+          <section className="panel approvals" id="approvals">
+            <h2>Human approval</h2>
+            <p className="muted">
+              SeaPay-style pause — above-threshold spends wait here.
+            </p>
+            {pending.length === 0 ? (
+              <p className="muted empty-slot">No spends awaiting approval.</p>
+            ) : (
+              <ul className="approval-list">
+                {pending.map((e) => (
+                  <li key={e.id}>
+                    <div>
+                      <strong>{e.label}</strong>
+                      <p className="mono">
+                        {formatUsdc(e.amountBaseUnits)} USDC · {e.policyReason}
+                      </p>
+                    </div>
+                    <div className="cta-row">
+                      <button
+                        className="btn primary"
+                        disabled={busy}
+                        onClick={() => void onApprove(e.id)}
+                      >
+                        Approve
+                      </button>
+                      <button
+                        className="btn danger"
+                        disabled={busy}
+                        onClick={() => void onReject(e.id, "reject")}
+                      >
+                        Reject
+                      </button>
+                      <button
+                        className="btn ghost"
+                        disabled={busy}
+                        onClick={() => void onReject(e.id, "cancel")}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className="panel focus">
+            <h2>Payment state</h2>
+            <PaymentProgress status={focus?.status ?? null} />
+            {focus ? (
+              <div className="focus-card">
+                <p>
+                  <strong>{focus.label}</strong>
+                </p>
+                <p className="muted">
+                  {focus.policyStatus}: {focus.policyReason}
+                </p>
+                {focus.feeLamportsEstimate ? (
+                  <p className="muted">
+                    Fee estimate ~{focus.feeLamportsEstimate} lamports
+                    {focus.simulateOk === false
+                      ? " · simulation failed"
+                      : focus.simulateOk
+                        ? " · simulation OK"
+                        : ""}
+                  </p>
+                ) : null}
+                {["approved", "ready_to_sign", "failed"].includes(focus.status) &&
+                address ? (
                   <button
                     className="btn primary"
                     disabled={busy}
-                    onClick={() => void onApprove(e.id)}
+                    onClick={() => void onSettle(focus, true)}
                   >
-                    Approve
+                    Simulate → sign → settle (self-pay)
                   </button>
-                  <button
-                    className="btn danger"
-                    disabled={busy}
-                    onClick={() => void onReject(e.id, "reject")}
-                  >
-                    Reject
-                  </button>
-                  <button
-                    className="btn ghost"
-                    disabled={busy}
-                    onClick={() => void onReject(e.id, "cancel")}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="panel focus">
-        <h2>Payment state</h2>
-        <PaymentProgress status={focus?.status ?? null} />
-        {focus ? (
-          <div className="focus-card">
-            <p>
-              <strong>{focus.label}</strong>
-            </p>
-            <p className="muted">
-              {focus.policyStatus}: {focus.policyReason}
-            </p>
-            {focus.feeLamportsEstimate ? (
-              <p className="muted">
-                Fee estimate ~{focus.feeLamportsEstimate} lamports
-                {focus.simulateOk === false
-                  ? " · simulation failed"
-                  : focus.simulateOk
-                    ? " · simulation OK"
-                    : ""}
+                ) : null}
+                {focus.error ? <p className="warn">{focus.error}</p> : null}
+              </div>
+            ) : (
+              <p className="muted">Propose a spend to see the state machine.</p>
+            )}
+            {message ? <p className="ok-msg" role="status">{message}</p> : null}
+            {error ? (
+              <p className="warn" role="alert">
+                {error}
               </p>
             ) : null}
-            {["approved", "ready_to_sign", "failed"].includes(focus.status) &&
-            address ? (
-              <button
-                className="btn primary"
-                disabled={busy}
-                onClick={() => void onSettle(focus, true)}
-              >
-                Simulate → sign → settle (self-pay)
-              </button>
-            ) : null}
-            {focus.error ? <p className="warn">{focus.error}</p> : null}
-          </div>
-        ) : (
-          <p className="muted">Propose a spend to see the state machine.</p>
-        )}
-        {message ? <p className="ok-msg">{message}</p> : null}
-        {error ? <p className="warn">{error}</p> : null}
-      </section>
+          </section>
+        </div>
+      </div>
 
       {receipt ? <ReceiptCard entry={receipt} /> : null}
 
       <section className="panel ledger">
         <h2>Decision log</h2>
         <p className="muted">
-          Agent Guard twin — every policy decision is visible.
+          Every policy decision stays visible — Agent Guard twin for the desk.
         </p>
         <div className="split">
           <div>
@@ -527,12 +568,14 @@ function DeskInner() {
         </div>
       </section>
 
+      <ResourceStrip />
       <TeamStrip />
 
       <footer className="footer">
         <p>
-          Built during UBC Hackathon 2026. Prep research lived in a private
-          reference repo — this submission history starts after kickoff.
+          Built during UBC Hackathon 2026 by Dipak Yadav, Utkarsh Lubal, and
+          Kashif Manzer. Solana Devnet USDC · Phantom · x402 · optional QuickNode
+          Streams.
         </p>
       </footer>
     </div>

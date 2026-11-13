@@ -2,11 +2,17 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import { appendAudit } from "@/lib/security/audit";
-import type { CreateLedgerInput, LedgerEntry, PaymentStatus } from "./types";
+import type {
+  CreateLedgerInput,
+  LedgerEntry,
+  PaymentStatus,
+  StreamEvent,
+} from "./types";
 import { IMMUTABLE_INTENT_FIELDS } from "./types";
 
 type LedgerState = {
   entries: Map<string, LedgerEntry>;
+  streamEvents: StreamEvent[];
   loaded: boolean;
 };
 
@@ -19,6 +25,7 @@ function state(): LedgerState {
   if (!globalThis.__policyDeskLedger) {
     globalThis.__policyDeskLedger = {
       entries: new Map(),
+      streamEvents: [],
       loaded: false,
     };
   }
@@ -50,10 +57,15 @@ function persist(): void {
   try {
     const dir = path.dirname(dataPath());
     mkdirSync(dir, { recursive: true });
-    const list = [...state().entries.values()];
+    const s = state();
+    const list = [...s.entries.values()];
     writeFileSync(
       dataPath(),
-      JSON.stringify({ entries: list }, null, 2),
+      JSON.stringify(
+        { entries: list, streamEvents: s.streamEvents.slice(0, 200) },
+        null,
+        2,
+      ),
       "utf8",
     );
   } catch {
@@ -68,9 +80,15 @@ function ensureLoaded(): void {
   try {
     if (!existsSync(dataPath())) return;
     const raw = readFileSync(dataPath(), "utf8");
-    const parsed = JSON.parse(raw) as { entries?: LedgerEntry[] };
+    const parsed = JSON.parse(raw) as {
+      entries?: LedgerEntry[];
+      streamEvents?: StreamEvent[];
+    };
     for (const entry of parsed.entries ?? []) {
       s.entries.set(entry.id, entry);
+    }
+    if (Array.isArray(parsed.streamEvents)) {
+      s.streamEvents.push(...parsed.streamEvents);
     }
   } catch {
     /* start empty */
@@ -178,9 +196,40 @@ export function dailySpentBaseUnits(): bigint {
   return total;
 }
 
+export function appendStreamEvent(input: {
+  signature?: string;
+  summary: string;
+  raw?: unknown;
+}): StreamEvent {
+  ensureLoaded();
+  const event: StreamEvent = {
+    id: randomUUID(),
+    receivedAt: nowIso(),
+    source: "quicknode_streams",
+    signature: input.signature,
+    summary: input.summary,
+    raw: input.raw,
+  };
+  const s = state();
+  s.streamEvents.unshift(event);
+  if (s.streamEvents.length > 200) s.streamEvents.length = 200;
+  persist();
+  appendAudit("streams.event", {
+    eventId: event.id,
+    signature: event.signature,
+  });
+  return event;
+}
+
+export function listStreamEvents(limit = 40): StreamEvent[] {
+  ensureLoaded();
+  return state().streamEvents.slice(0, limit);
+}
+
 export function resetLedgerForTests(): void {
   globalThis.__policyDeskLedger = {
     entries: new Map(),
+    streamEvents: [],
     loaded: true,
   };
 }
