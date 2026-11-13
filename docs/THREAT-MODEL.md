@@ -34,7 +34,7 @@
 | Boundary | Rule |
 |---|---|
 | Model → policy | Scenario/agent text never sets caps, mint, or allowlists |
-| Browser → approvals | `x-operator-token` / Bearer must match `OPERATOR_TOKEN` (fail closed if unset) |
+| Browser → approvals | Operator HttpOnly session from `/api/operator/login` + CSRF (fail closed if `OPERATOR_TOKEN` unset). No `NEXT_PUBLIC_` operator secrets. |
 | Browser → settle | Prepare re-checks policy + destination; confirm validates TransferChecked |
 | Seller → desk | x402 seller verifies amount, mint, payTo, and signed transfer shape |
 | Webhook → ledger | Streams verifies shared secret **when configured**; otherwise acknowledge-only |

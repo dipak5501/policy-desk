@@ -67,7 +67,7 @@ type Balances = {
 };
 
 function DeskInner() {
-  const { address, provider, connect, installed, connecting, ready } =
+  const { address, provider, connect, installed, connecting, ready, sessionReady } =
     useWallet();
   const [policy, setPolicy] = useState<PolicyPayload | null>(null);
   const [balances, setBalances] = useState<Balances | null>(null);
@@ -85,19 +85,22 @@ function DeskInner() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  const operatorToken =
-    process.env.NEXT_PUBLIC_OPERATOR_TOKEN ?? "policy-desk-dev-operator";
+  const [operatorAuthed, setOperatorAuthed] = useState(false);
+  const [operatorPassword, setOperatorPassword] = useState("");
 
   const refresh = useCallback(async () => {
-    const [p, l, c, streams] = await Promise.all([
+    const [p, l, c, streams, op] = await Promise.all([
       fetch("/api/policy").then((r) => r.json()),
-      fetch("/api/ledger").then((r) => r.json()),
+      fetch("/api/ledger", { credentials: "include" }).then((r) => r.json()),
       fetch("/api/catalog").then((r) => r.json()),
       fetch("/api/streams/webhook")
         .then((r) => r.json())
         .catch(() => ({ events: [] })),
+      fetch("/api/operator/session", { credentials: "include" })
+        .then((r) => r.json())
+        .catch(() => ({ authenticated: false })),
     ]);
+    setOperatorAuthed(Boolean(op.authenticated));
     setPolicy(p);
     setEntries(l.entries ?? []);
     setAudit(l.audit ?? p.audit ?? []);
@@ -114,13 +117,43 @@ function DeskInner() {
       if (b.balances) setBalances(b.balances);
       if (b.error) setError(b.error);
     }
-  }, [address, task?.id]);
+  }, [address, task?.id, sessionReady]);
 
   useEffect(() => {
     void refresh();
     const t = setInterval(() => void refresh(), 8000);
     return () => clearInterval(t);
   }, [refresh]);
+
+  function csrfHeaders(): HeadersInit {
+    if (typeof document === "undefined") return {};
+    const match = document.cookie.match(/(?:^|; )pd_csrf=([^;]*)/);
+    const csrf = match?.[1] ? decodeURIComponent(match[1]) : "";
+    return csrf ? { "x-csrf-token": csrf } : {};
+  }
+
+  async function operatorLogin() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/operator/login", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: operatorPassword }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Operator login failed");
+      setOperatorAuthed(true);
+      setOperatorPassword("");
+      setMessage("Operator session active (HttpOnly cookie).");
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   const pending = useMemo(
     () =>
@@ -138,7 +171,8 @@ function DeskInner() {
     try {
       const res = await fetch("/api/tasks", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...csrfHeaders() },
         body: JSON.stringify({
           prompt: promptInput,
           budgetBaseUnits: budgetInput,
@@ -172,7 +206,8 @@ function DeskInner() {
     try {
       const res = await fetch("/api/agent/run", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...csrfHeaders() },
         body: JSON.stringify({ taskId: task.id, action }),
       });
       const data = await res.json();
@@ -200,11 +235,7 @@ function DeskInner() {
     setBusy(true);
     setError(null);
     try {
-      const updated = await approveEntry(
-        entry.id,
-        operatorToken,
-        entry.intentHash,
-      );
+      const updated = await approveEntry(entry.id, entry.intentHash);
       setFocus(updated);
       setMessage("Operator approved — wallet may prepare & sign.");
       await refresh();
@@ -220,9 +251,10 @@ function DeskInner() {
     try {
       const res = await fetch(`/api/approvals/${id}`, {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
-          "x-operator-token": operatorToken,
+          ...csrfHeaders(),
         },
         body: JSON.stringify({ action }),
       });
@@ -290,7 +322,8 @@ function DeskInner() {
       setMessage("Starting fixture research task…");
       const created = await fetch("/api/tasks", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...csrfHeaders() },
         body: JSON.stringify({
           prompt: promptInput,
           budgetBaseUnits: budgetInput,
@@ -303,7 +336,8 @@ function DeskInner() {
       async function step(action: Parameters<typeof agentStep>[0]) {
         const res = await fetch("/api/agent/run", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          headers: { "Content-Type": "application/json", ...csrfHeaders() },
           body: JSON.stringify({ taskId, action }),
         });
         const data = await res.json();
@@ -316,31 +350,47 @@ function DeskInner() {
       setMessage("Inspect catalog (fixture)…");
       await step("inspect");
 
-      setMessage("Blocked purchase — policy reasons…");
+      setMessage("Blocked purchase — policy reasons (no reservation)…");
       await step("request_blocked");
 
-      setMessage("Approved alternative — under threshold…");
-      const allowed = await step("request_approved");
-      if (allowed.entryId) {
-        const ledger = await fetch("/api/ledger").then((r) => r.json());
-        const entry = (ledger.entries as LedgerEntry[]).find(
-          (e) => e.id === allowed.entryId,
+      setMessage("Approved alternative (above threshold) — operator approval…");
+      const deep = await step("request_approval_tier");
+      if (deep.next === "await_human_approval" && deep.entryId) {
+        if (!operatorAuthed) {
+          throw new Error(
+            "Log in as operator first (server session) to approve above-threshold spends.",
+          );
+        }
+        const ledger = await fetch("/api/ledger", {
+          credentials: "include",
+        }).then((r) => r.json());
+        const pendingEntry = (ledger.entries as LedgerEntry[]).find(
+          (e) => e.id === deep.entryId,
         );
-        if (!entry) throw new Error("Entry missing after allow");
-        setFocus(entry);
-        setMessage("Simulate → Phantom sign → settle to merchant…");
-        const settled = await settleEntry({
-          entryId: entry.id,
-          fromOwner: address,
-          provider: provider as never,
-          selfPay: false,
-        });
-        setFocus(settled);
-        setReceipt(settled);
-        setMessage("Compose answer from purchased content…");
-        await step("compose_answer");
-        await refresh();
+        if (!pendingEntry) throw new Error("Approval entry missing");
+        await approveEntry(pendingEntry.id, pendingEntry.intentHash);
       }
+
+      const ledger2 = await fetch("/api/ledger", {
+        credentials: "include",
+      }).then((r) => r.json());
+      const entry = (ledger2.entries as LedgerEntry[]).find(
+        (e) => e.id === deep.entryId,
+      );
+      if (!entry) throw new Error("Entry missing after approval");
+      setFocus(entry);
+      setMessage("Simulate → Phantom sign → settle to merchant…");
+      const settled = await settleEntry({
+        entryId: entry.id,
+        fromOwner: address,
+        provider: provider as never,
+        selfPay: false,
+      });
+      setFocus(settled);
+      setReceipt(settled);
+      setMessage("Compose answer from purchased sample content…");
+      await step("compose_answer");
+      await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -581,8 +631,30 @@ function DeskInner() {
             <h2>Approval card</h2>
             <p className="muted">
               SeaPay-style pause — merchant, amount, reason, budget impact,
-              expiry.
+              expiry. Operator auth is a server HttpOnly session (not a public
+              browser token).
             </p>
+            {!operatorAuthed ? (
+              <div className="cta-row" style={{ marginBottom: "0.75rem" }}>
+                <input
+                  type="password"
+                  className="mono"
+                  placeholder="Operator password"
+                  value={operatorPassword}
+                  onChange={(e) => setOperatorPassword(e.target.value)}
+                  aria-label="Operator password"
+                />
+                <button
+                  className="btn"
+                  disabled={busy || !operatorPassword}
+                  onClick={() => void operatorLogin()}
+                >
+                  Operator login
+                </button>
+              </div>
+            ) : (
+              <p className="ok-msg">Operator session active</p>
+            )}
             {pending.length === 0 ? (
               <p className="muted empty-slot">No spends awaiting approval.</p>
             ) : (

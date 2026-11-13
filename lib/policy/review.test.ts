@@ -11,10 +11,12 @@ const config: PolicyConfig = {
   approvalThresholdBaseUnits: 500_000n,
   allowlistedPayees: [DEMO_PAYEE],
   allowlistedResources: [DEMO_X402_RESOURCE, "spl:transfer"],
-  allowlistedDomains: ["localhost"],
+  allowlistedDomains: ["localhost", "127.0.0.1"],
   allowedMint: DEVNET_USDC_MINT,
   paused: false,
 };
+
+const trusted = { trustedOrigin: "http://127.0.0.1:3000" };
 
 describe("reviewSpend", () => {
   it("blocks non-allowlisted merchant before any signature", () => {
@@ -37,6 +39,7 @@ describe("reviewSpend", () => {
         payee: DEMO_PAYEE,
         amountBaseUnits: 600_000n,
         mint: DEVNET_USDC_MINT,
+        ...trusted,
       },
       config,
     );
@@ -50,6 +53,7 @@ describe("reviewSpend", () => {
         payee: DEMO_PAYEE,
         amountBaseUnits: 100_000n,
         mint: DEVNET_USDC_MINT,
+        ...trusted,
       },
       config,
     );
@@ -63,6 +67,7 @@ describe("reviewSpend", () => {
         payee: DEMO_PAYEE,
         amountBaseUnits: 2_000_000n,
         mint: DEVNET_USDC_MINT,
+        ...trusted,
       },
       config,
     );

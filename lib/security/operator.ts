@@ -1,16 +1,19 @@
-/** Shared-secret operator gate for approve/reject (demo auth, not production). */
+import {
+  assertCsrf,
+  operatorConfigured,
+  readOperatorSession,
+} from "@/lib/security/session";
 
-export function operatorToken(): string {
-  return process.env.OPERATOR_TOKEN ?? "";
-}
-
+/**
+ * Operator authorization for approve/reject.
+ * Requires server-side OPERATOR_TOKEN configured (fail closed) and
+ * an HttpOnly operator session cookie issued by /api/operator/login.
+ * Legacy x-operator-token header is rejected on purpose (no public secrets).
+ */
 export function assertOperator(request: Request): boolean {
-  const expected = operatorToken();
-  if (!expected) return false;
-  const header = request.headers.get("x-operator-token") ?? "";
-  const auth = request.headers.get("authorization") ?? "";
-  const bearer = auth.toLowerCase().startsWith("bearer ")
-    ? auth.slice(7).trim()
-    : "";
-  return header === expected || bearer === expected;
+  if (!operatorConfigured()) return false;
+  if (!readOperatorSession(request)) return false;
+  // CSRF for cookie-authenticated mutating requests
+  if (!assertCsrf(request)) return false;
+  return true;
 }
