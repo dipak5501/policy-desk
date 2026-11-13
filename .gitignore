@@ -1,0 +1,15 @@
+node_modules
+.next
+out
+.data
+.env
+.env.local
+.env*.local
+.tunnel-url
+.tunnel.pid
+.tunnel.log
+.next-dev.pid
+.next-dev.log
+*.tsbuildinfo
+.DS_Store
+npm-debug.log*
