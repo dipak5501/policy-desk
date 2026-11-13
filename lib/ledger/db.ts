@@ -12,7 +12,6 @@ type JsonFileShape = {
 };
 
 declare global {
-  // eslint-disable-next-line no-var
   var __policyDeskSqlite: {
     db: DatabaseSync;
     path: string;

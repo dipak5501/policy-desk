@@ -74,6 +74,8 @@ Paid bodies are team-authored **demo catalog** briefs (`[DEMO CATALOG]`), unlock
 
 ## Run locally
 
+Requires Node.js 22.5 or later (`node:sqlite` is built in).
+
 ```bash
 export PATH="$HOME/.nvm/versions/node/v22.18.0/bin:$PATH"  # if needed
 cd policy-desk

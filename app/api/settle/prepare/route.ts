@@ -27,6 +27,7 @@ import {
   selectExactUsdcRequirement,
 } from "@/lib/x402/client";
 import { requirementAmount } from "@/lib/x402/types";
+import { matchesCatalogSettlementDestination } from "@/lib/x402/catalogBinding";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -118,6 +119,13 @@ export async function POST(request: Request) {
       );
     }
 
+    if (entry.resourceId && body.selfPay) {
+      return NextResponse.json(
+        { error: "Catalog-bound purchases cannot use a self-pay destination" },
+        { status: 400 },
+      );
+    }
+
     // Bind wallet once
     if (!entry.fromOwner) {
       setLedgerStatus(entry.id, entry.status, { fromOwner: wallet });
@@ -134,21 +142,14 @@ export async function POST(request: Request) {
         ? wallet
         : entry.payee;
 
-    // Catalog binding: client cannot change merchant economics
-    if (entry.resourceId) {
-      const catalog = getCatalogResource(entry.resourceId);
-      if (
-        catalog &&
-        !catalog.adversarialFixture &&
-        (catalog.payee !== entry.payee ||
-          catalog.amountBaseUnits !== entry.amountBaseUnits ||
-          catalog.mint !== entry.mint)
-      ) {
-        return NextResponse.json(
-          { error: "Intent diverged from server catalog binding" },
-          { status: 409 },
-        );
-      }
+    if (
+      entry.resourceId &&
+      !matchesCatalogSettlementDestination(entry, payee)
+    ) {
+      return NextResponse.json(
+        { error: "Intent diverged from server catalog settlement binding" },
+        { status: 409 },
+      );
     }
 
     if (

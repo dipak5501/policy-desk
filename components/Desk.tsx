@@ -68,7 +68,7 @@ type Balances = {
 };
 
 function DeskInner() {
-  const { address, provider, connect, installed, connecting, ready, sessionReady } =
+  const { address, provider, connect, installed, connecting, ready } =
     useWallet();
   const [policy, setPolicy] = useState<PolicyPayload | null>(null);
   const [balances, setBalances] = useState<Balances | null>(null);
@@ -88,6 +88,8 @@ function DeskInner() {
   const [error, setError] = useState<string | null>(null);
   const [operatorAuthed, setOperatorAuthed] = useState(false);
   const [operatorPassword, setOperatorPassword] = useState("");
+
+  const taskId = task?.id;
 
   const refresh = useCallback(async () => {
     const [p, l, c, streams, op, walletSession] = await Promise.all([
@@ -115,8 +117,8 @@ function DeskInner() {
     setAudit(l.audit ?? p.audit ?? []);
     setCatalog(c.resources ?? []);
     setStreamEvents(streams.events ?? []);
-    if (task?.id) {
-      const t = await fetch(`/api/tasks/${task.id}`).then((r) => r.json());
+    if (taskId) {
+      const t = await fetch(`/api/tasks/${taskId}`).then((r) => r.json());
       if (t.task) setTask(t.task);
     }
     if (address) {
@@ -126,7 +128,7 @@ function DeskInner() {
       if (b.balances) setBalances(b.balances);
       if (b.error) setError(b.error);
     }
-  }, [address, task?.id, sessionReady]);
+  }, [address, taskId]);
 
   useEffect(() => {
     void refresh();
@@ -421,6 +423,7 @@ function DeskInner() {
         <div className="cta-row">
           {!address ? (
             <button
+              type="button"
               className="btn primary"
               disabled={!ready || !installed || connecting}
               onClick={() => void connect()}
@@ -433,6 +436,7 @@ function DeskInner() {
             </button>
           ) : (
             <button
+              type="button"
               className="btn primary"
               disabled={busy}
               onClick={() => void runResearchDemo()}
@@ -534,6 +538,7 @@ function DeskInner() {
           </label>
           <div className="cta-row">
             <button
+              type="button"
               className="btn primary"
               disabled={busy}
               onClick={() => void startTask()}
@@ -541,6 +546,7 @@ function DeskInner() {
               Start task
             </button>
             <button
+              type="button"
               className="btn"
               disabled={busy || !task}
               onClick={() => void agentStep("inspect")}
@@ -548,6 +554,7 @@ function DeskInner() {
               Inspect catalog
             </button>
             <button
+              type="button"
               className="btn"
               disabled={busy || !task}
               onClick={() => void agentStep("request_blocked")}
@@ -555,6 +562,7 @@ function DeskInner() {
               Request blocked
             </button>
             <button
+              type="button"
               className="btn"
               disabled={busy || !task}
               onClick={() => void agentStep("request_approved")}
@@ -562,6 +570,7 @@ function DeskInner() {
               Request approved
             </button>
             <button
+              type="button"
               className="btn"
               disabled={busy || !task}
               onClick={() => void agentStep("request_approval_tier")}
@@ -659,6 +668,7 @@ function DeskInner() {
                   aria-label="Operator password"
                 />
                 <button
+                  type="button"
                   className="btn"
                   disabled={busy || !operatorPassword}
                   onClick={() => void operatorLogin()}
@@ -691,6 +701,7 @@ function DeskInner() {
                     </div>
                     <div className="cta-row">
                       <button
+                        type="button"
                         className="btn primary"
                         disabled={busy}
                         onClick={() => void onApprove(e)}
@@ -698,6 +709,7 @@ function DeskInner() {
                         Approve
                       </button>
                       <button
+                        type="button"
                         className="btn danger"
                         disabled={busy}
                         onClick={() => void onReject(e.id, "reject")}
@@ -726,6 +738,7 @@ function DeskInner() {
                   focus.status,
                 ) && address ? (
                   <button
+                    type="button"
                     className="btn primary"
                     disabled={busy}
                     onClick={() => void onSettle(focus)}
@@ -785,6 +798,7 @@ function DeskInner() {
             <h3>Audit</h3>
             <ul className="log-list mono">
               {audit.slice(0, 12).map((a, i) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: Audit events can share timestamps.
                 <li key={`${a.ts}-${i}`}>
                   {a.ts.slice(11, 19)} {a.kind}
                   {a.entryId ? ` · ${shortKey(a.entryId, 4)}` : ""}

@@ -5,6 +5,7 @@ import {
 } from "@/lib/catalog/resources";
 import { getLedgerEntry, updateLedgerEntry } from "@/lib/ledger/store";
 import type { LedgerEntry } from "@/lib/ledger/types";
+import { matchesCatalogSettlementDestination } from "./catalogBinding";
 
 export type PurchasedPayload = {
   ok: true;
@@ -121,6 +122,17 @@ export function fulfillPurchasedIfSettled(args: FulfillArgs):
     return {
       ok: false,
       error: "Merchant/mint does not match catalog binding",
+      code: "mismatch",
+    };
+  }
+
+  if (
+    !entry.preparedToOwner ||
+    !matchesCatalogSettlementDestination(entry, entry.preparedToOwner)
+  ) {
+    return {
+      ok: false,
+      error: "Settled destination does not match the catalog merchant",
       code: "mismatch",
     };
   }

@@ -26,21 +26,38 @@ export function EventTicker({
 
   if (recent.length === 0 && streams.length === 0) {
     return (
-      <div className="event-ticker event-ticker-empty" aria-label="Ledger feed">
+      <section
+        className="event-ticker event-ticker-empty"
+        aria-label="Ledger feed"
+      >
         <span className="live-dot" aria-hidden />
         <span className="ticker-label">LIVE</span>
         <span className="muted small">
           Waiting for proposals — blocked, settled, and Streams hits appear here.
         </span>
-      </div>
+      </section>
     );
   }
 
   const loop =
-    recent.length >= 3 ? [...recent, ...recent] : recent.length > 0 ? recent : [];
+    recent.length >= 3
+      ? [
+          ...recent.map((entry) => ({
+            entry,
+            key: `${entry.id}-original`,
+          })),
+          ...recent.map((entry) => ({
+            entry,
+            key: `${entry.id}-duplicate`,
+          })),
+        ]
+      : recent.map((entry) => ({ entry, key: entry.id }));
 
   return (
-    <div className="event-ticker" aria-label="Recent ledger events">
+    <section
+      className="event-ticker"
+      aria-label="Recent ledger events"
+    >
       <div className="ticker-fixed">
         <span className="live-dot" aria-hidden />
         <span className="ticker-label">LIVE</span>
@@ -58,11 +75,8 @@ export function EventTicker({
               <span className="ticker-label-text">{ev.summary}</span>
             </li>
           ))}
-          {loop.map((entry, index) => (
-            <li
-              key={`${entry.id}-${index}`}
-              className={`ticker-item ${tone(entry.status)}`}
-            >
+          {loop.map(({ entry, key }) => (
+            <li key={key} className={`ticker-item ${tone(entry.status)}`}>
               <span className="ticker-status">{entry.status}</span>
               <span className="ticker-sep" aria-hidden>
                 ·
@@ -75,6 +89,6 @@ export function EventTicker({
           ))}
         </ul>
       </div>
-    </div>
+    </section>
   );
 }

@@ -13,6 +13,7 @@ import {
   withLedgerLock,
 } from "../ledger/store";
 import { fulfillWeatherIfSettled } from "../x402/fulfill";
+import { matchesCatalogSettlementDestination } from "../x402/catalogBinding";
 import { resetAuditForTests } from "./audit";
 import { isSettledDestinationAllowed } from "../policy/destination";
 import { reviewSpend } from "../policy/review";
@@ -213,7 +214,10 @@ describe("adversarial controls", () => {
       resourceId: "weather-brief",
       fromOwner: wallet,
     });
-    setLedgerStatus(entry.id, "settled", { signature: "fakeSigForTest" });
+    setLedgerStatus(entry.id, "settled", {
+      signature: "fakeSigForTest",
+      preparedToOwner: "AxYkHSSywB5pxa4GCwnmwp8ArnR8z8EoqQu2RsbAFpMr",
+    });
     const first = fulfillWeatherIfSettled({
       entryId: entry.id,
       ownerWallet: wallet,
@@ -229,6 +233,36 @@ describe("adversarial controls", () => {
     }
   });
 
+  it("rejects a catalog purchase prepared for a non-catalog destination", () => {
+    const wallet = "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263";
+    const entry = createLedgerEntry({
+      label: "weather",
+      resource: "/api/x402/weather",
+      payee: "AxYkHSSywB5pxa4GCwnmwp8ArnR8z8EoqQu2RsbAFpMr",
+      amountBaseUnits: "100000",
+      mint: DEVNET_USDC_MINT,
+      settlementKind: "x402",
+      resourceId: "weather-brief",
+      fromOwner: wallet,
+    });
+    assert.equal(
+      matchesCatalogSettlementDestination(entry, entry.payee),
+      true,
+    );
+    assert.equal(matchesCatalogSettlementDestination(entry, wallet), false);
+
+    setLedgerStatus(entry.id, "settled", {
+      signature: "fakeSelfPaySignature",
+      preparedToOwner: wallet,
+    });
+    const denied = fulfillWeatherIfSettled({
+      entryId: entry.id,
+      ownerWallet: wallet,
+    });
+    assert.equal(denied.ok, false);
+    if (!denied.ok) assert.equal(denied.code, "mismatch");
+  });
+
   it("rejects another wallet unlocking purchased content", () => {
     const entry = createLedgerEntry({
       label: "weather",
@@ -240,7 +274,10 @@ describe("adversarial controls", () => {
       resourceId: "weather-brief",
       fromOwner: "AxYkHSSywB5pxa4GCwnmwp8ArnR8z8EoqQu2RsbAFpMr",
     });
-    setLedgerStatus(entry.id, "settled", { signature: "fakeSigForTest" });
+    setLedgerStatus(entry.id, "settled", {
+      signature: "fakeSigForTest",
+      preparedToOwner: "AxYkHSSywB5pxa4GCwnmwp8ArnR8z8EoqQu2RsbAFpMr",
+    });
     const denied = fulfillWeatherIfSettled({
       entryId: entry.id,
       ownerWallet: "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",

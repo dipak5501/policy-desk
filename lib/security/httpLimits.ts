@@ -6,7 +6,6 @@
 type Bucket = { count: number; resetAt: number };
 
 declare global {
-  // eslint-disable-next-line no-var
   var __policyDeskRateBuckets: Map<string, Bucket> | undefined;
 }
 

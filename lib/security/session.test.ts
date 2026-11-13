@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it, beforeEach, afterEach } from "node:test";
 import nacl from "tweetnacl";
-import bs58 from "bs58";
 import { Keypair } from "@solana/web3.js";
 import {
   assertCsrf,
