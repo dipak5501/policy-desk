@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { getScenario, type AgentScenarioId } from "@/lib/agent/scenarios";
+import {
+  demoScenarios,
+  getScenario,
+  type AgentScenarioId,
+} from "@/lib/agent/scenarios";
 import { getActivePolicy } from "@/lib/policy/active";
 import {
   buildPaymentQuote,
@@ -177,6 +181,5 @@ export async function POST(request: Request) {
 }
 
 export async function GET() {
-  const { demoScenarios } = await import("@/lib/agent/scenarios");
   return NextResponse.json({ scenarios: demoScenarios() });
 }
