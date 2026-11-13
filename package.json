@@ -1,0 +1,38 @@
+{
+  "name": "policy-desk",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Policy Desk — policy-gated agent treasury for Solana USDC / x402 (UBC Hackathon 2026)",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "test": "node --import tsx --test lib/policy/review.test.ts lib/policy/regime.test.ts lib/ledger/store.test.ts lib/security/adversarial.test.ts",
+    "typecheck": "tsc --noEmit",
+    "tunnel": "bash scripts/tunnel.sh start",
+    "tunnel:refresh": "bash scripts/tunnel.sh refresh",
+    "tunnel:stop": "bash scripts/tunnel.sh stop",
+    "tunnel:status": "bash scripts/tunnel.sh status",
+    "tunnel:url": "bash scripts/tunnel.sh url",
+    "dev:public": "bash scripts/tunnel.sh start"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@solana/spl-token": "^0.4.13",
+    "@solana/web3.js": "^1.98.4",
+    "bs58": "^6.0.0",
+    "next": "^15.5.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.0"
+  }
+}
