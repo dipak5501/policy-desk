@@ -45,20 +45,57 @@ function sign(value: string): string {
   return createHmac("sha256", s).update(value).digest("hex");
 }
 
-function cookie(name: string, value: string, maxAgeSec: number): string {
+/**
+ * Cookie attributes for local HTTP vs HTTPS (production / Cloudflare tunnel).
+ * SameSite=Strict + missing Secure often breaks session cookies on
+ * *.trycloudflare.com: verify "succeeds" but later API calls have no session.
+ */
+export function requestIsHttps(request?: Request | null): boolean {
+  if (process.env.COOKIE_SECURE === "1") return true;
+  if (process.env.COOKIE_SECURE === "0") return false;
+  if (request) {
+    const proto = request.headers.get("x-forwarded-proto");
+    if (proto) return proto.split(",")[0]!.trim().toLowerCase() === "https";
+    try {
+      if (new URL(request.url).protocol === "https:") return true;
+    } catch {
+      /* ignore */
+    }
+  }
+  if (process.env.NODE_ENV === "production") return true;
+  const publicUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
+  return /^https:/i.test(publicUrl);
+}
+
+function cookie(
+  name: string,
+  value: string,
+  maxAgeSec: number,
+  secure: boolean,
+): string {
   const parts = [
     `${name}=${value}`,
     "Path=/",
     "HttpOnly",
-    "SameSite=Strict",
+    // HTTPS (tunnel/prod): SameSite=None + Secure so cookies stick on
+    // trycloudflare. Local HTTP: Lax without Secure.
+    secure ? "SameSite=None" : "SameSite=Lax",
     `Max-Age=${maxAgeSec}`,
   ];
-  if (process.env.NODE_ENV === "production") parts.push("Secure");
+  if (secure) parts.push("Secure");
   return parts.join("; ");
 }
 
-function clearCookie(name: string): string {
-  return `${name}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0`;
+function clearCookie(name: string, secure: boolean): string {
+  const parts = [
+    `${name}=`,
+    "Path=/",
+    "HttpOnly",
+    secure ? "SameSite=None" : "SameSite=Lax",
+    "Max-Age=0",
+  ];
+  if (secure) parts.push("Secure");
+  return parts.join("; ");
 }
 
 export function parseCookies(request: Request): Record<string, string> {
@@ -117,7 +154,10 @@ export function consumeWalletChallenge(
   return true;
 }
 
-export function issueWalletSession(wallet: string): {
+export function issueWalletSession(
+  wallet: string,
+  request?: Request | null,
+): {
   setCookies: string[];
   csrf: string;
 } {
@@ -126,12 +166,13 @@ export function issueWalletSession(wallet: string): {
   const expiresAt = Date.now() + 12 * 60 * 60 * 1000;
   store().walletSessions.set(sid, { wallet, expiresAt, csrf });
   const signed = `${sid}.${sign(sid)}`;
+  const secure = requestIsHttps(request);
   return {
     csrf,
     setCookies: [
-      cookie(COOKIE_WALLET, signed, 12 * 60 * 60),
+      cookie(COOKIE_WALLET, signed, 12 * 60 * 60, secure),
       // HttpOnly double-submit cookie — clients must use JSON csrf, not document.cookie
-      cookie(COOKIE_CSRF, csrf, 12 * 60 * 60),
+      cookie(COOKIE_CSRF, csrf, 12 * 60 * 60, secure),
     ],
   };
 }
@@ -229,7 +270,7 @@ export function verifyOperatorPassword(password: string): boolean {
   }
 }
 
-export function issueOperatorSession(): {
+export function issueOperatorSession(request?: Request | null): {
   setCookies: string[];
   csrf: string;
 } {
@@ -238,11 +279,12 @@ export function issueOperatorSession(): {
   const expiresAt = Date.now() + 8 * 60 * 60 * 1000;
   store().operatorSessions.set(sid, { expiresAt, csrf });
   const signed = `${sid}.${sign(sid)}`;
+  const secure = requestIsHttps(request);
   return {
     csrf,
     setCookies: [
-      cookie(COOKIE_OPERATOR, signed, 8 * 60 * 60),
-      cookie(COOKIE_CSRF, csrf, 8 * 60 * 60),
+      cookie(COOKIE_OPERATOR, signed, 8 * 60 * 60, secure),
+      cookie(COOKIE_CSRF, csrf, 8 * 60 * 60, secure),
     ],
   };
 }
@@ -273,11 +315,12 @@ export function readOperatorSessionDetails(
   return readOperatorSessionRow(request);
 }
 
-export function clearSessions(): string[] {
+export function clearSessions(request?: Request | null): string[] {
+  const secure = requestIsHttps(request);
   return [
-    clearCookie(COOKIE_WALLET),
-    clearCookie(COOKIE_OPERATOR),
-    clearCookie(COOKIE_CSRF),
+    clearCookie(COOKIE_WALLET, secure),
+    clearCookie(COOKIE_OPERATOR, secure),
+    clearCookie(COOKIE_CSRF, secure),
   ];
 }
 

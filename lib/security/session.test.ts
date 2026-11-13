@@ -121,4 +121,28 @@ describe("wallet challenge binding", () => {
     // Cookie is HttpOnly in Set-Cookie attribute — clients must use JSON csrf
     assert.match(session.setCookies[1]!, /HttpOnly/);
   });
+
+  it("sets SameSite=Lax without Secure for local HTTP", () => {
+    const wallet = Keypair.generate().publicKey.toBase58();
+    const httpReq = new Request("http://127.0.0.1:3000/api/wallet/verify");
+    const session = issueWalletSession(wallet, httpReq);
+    for (const c of session.setCookies) {
+      assert.match(c, /SameSite=Lax/);
+      assert.doesNotMatch(c, /SameSite=None/);
+      assert.doesNotMatch(c, /;\s*Secure(?:;|$)/);
+    }
+  });
+
+  it("sets SameSite=None + Secure for HTTPS / tunnel via x-forwarded-proto", () => {
+    const wallet = Keypair.generate().publicKey.toBase58();
+    const tunnelReq = new Request("http://127.0.0.1:3000/api/wallet/verify", {
+      headers: { "x-forwarded-proto": "https" },
+    });
+    const session = issueWalletSession(wallet, tunnelReq);
+    for (const c of session.setCookies) {
+      assert.match(c, /SameSite=None/);
+      assert.match(c, /;\s*Secure(?:;|$)/);
+      assert.match(c, /HttpOnly/);
+    }
+  });
 });

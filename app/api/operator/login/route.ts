@@ -41,7 +41,7 @@ export async function POST(request: Request) {
     if (!body.password || !verifyOperatorPassword(body.password)) {
       return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
     }
-    const session = issueOperatorSession();
+    const session = issueOperatorSession(request);
     const res = NextResponse.json({
       ok: true,
       csrf: session.csrf,

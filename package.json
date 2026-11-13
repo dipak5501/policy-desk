@@ -15,7 +15,9 @@
     "tunnel:stop": "bash scripts/tunnel.sh stop",
     "tunnel:status": "bash scripts/tunnel.sh status",
     "tunnel:url": "bash scripts/tunnel.sh url",
-    "dev:public": "bash scripts/tunnel.sh start"
+    "dev:public": "bash scripts/tunnel.sh start",
+    "demo:chrome": "bash scripts/demo-chrome.sh",
+    "doctor": "bash scripts/doctor.sh"
   },
   "engines": {
     "node": ">=22.5.0"
