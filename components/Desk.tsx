@@ -68,8 +68,18 @@ type Balances = {
 };
 
 function DeskInner() {
-  const { address, provider, connect, installed, connecting, ready } =
-    useWallet();
+  const {
+    address,
+    provider,
+    connect,
+    ensureSession,
+    installed,
+    connecting,
+    signingIn,
+    ready,
+    sessionReady,
+    refreshProvider,
+  } = useWallet();
   const [policy, setPolicy] = useState<PolicyPayload | null>(null);
   const [balances, setBalances] = useState<Balances | null>(null);
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
@@ -168,7 +178,48 @@ function DeskInner() {
     [entries],
   );
 
+  function mapWalletSessionError(raw: string): string {
+    if (/wallet session required/i.test(raw)) {
+      return "Connect Phantom and sign the login challenge first (Sign in with Phantom). Operator login alone is not enough.";
+    }
+    return raw;
+  }
+
+  async function signInWithPhantom() {
+    setBusy(true);
+    setError(null);
+    try {
+      refreshProvider();
+      if (!installed) {
+        throw new Error(
+          "Phantom not detected. Open this page in Chrome or Brave with the Phantom extension, then refresh.",
+        );
+      }
+      if (!address) {
+        await connect();
+      } else if (!sessionReady) {
+        await ensureSession();
+      }
+      setMessage("Wallet session active — you can run the demo.");
+      await refresh();
+    } catch (err) {
+      setError(
+        mapWalletSessionError(
+          err instanceof Error ? err.message : String(err),
+        ),
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function startTask() {
+    if (!sessionReady) {
+      setError(
+        "Connect Phantom and sign the login challenge first (Sign in with Phantom).",
+      );
+      return;
+    }
     setBusy(true);
     setError(null);
     setMessage(null);
@@ -191,7 +242,11 @@ function DeskInner() {
       );
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(
+        mapWalletSessionError(
+          err instanceof Error ? err.message : String(err),
+        ),
+      );
     } finally {
       setBusy(false);
     }
@@ -206,6 +261,12 @@ function DeskInner() {
       | "compose_answer",
   ) {
     if (!task) return;
+    if (!sessionReady) {
+      setError(
+        "Connect Phantom and sign the login challenge first (Sign in with Phantom).",
+      );
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -229,7 +290,11 @@ function DeskInner() {
       await refresh();
       return data;
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(
+        mapWalletSessionError(
+          err instanceof Error ? err.message : String(err),
+        ),
+      );
       return null;
     } finally {
       setBusy(false);
@@ -306,7 +371,15 @@ function DeskInner() {
 
   async function runResearchDemo() {
     if (!address || !provider) {
-      setError("Connect Phantom (Devnet) before the guided demo.");
+      setError(
+        "Connect Phantom and sign the login challenge first (Chrome/Brave with Phantom).",
+      );
+      return;
+    }
+    if (!sessionReady) {
+      setError(
+        "Sign in with Phantom first — approve the wallet login challenge, then Run demo.",
+      );
       return;
     }
     if (
@@ -397,7 +470,11 @@ function DeskInner() {
       await step("compose_answer");
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(
+        mapWalletSessionError(
+          err instanceof Error ? err.message : String(err),
+        ),
+      );
     } finally {
       setBusy(false);
     }
@@ -421,18 +498,54 @@ function DeskInner() {
           merchants, humans approve when needed, Solana settles before content.
         </p>
         <div className="cta-row">
-          {!address ? (
+          {!installed ? (
+            <>
+              <a
+                className="btn primary"
+                href="https://phantom.app/download"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Get Phantom extension
+              </a>
+              <button
+                className="btn ghost"
+                type="button"
+                disabled={!ready}
+                onClick={() => {
+                  refreshProvider();
+                  // Content scripts often need a full reload after enabling Phantom.
+                  window.setTimeout(() => {
+                    if (
+                      !(window as unknown as { phantom?: { solana?: unknown } })
+                        .phantom?.solana
+                    ) {
+                      window.location.reload();
+                    }
+                  }, 400);
+                }}
+              >
+                I installed it — recheck
+              </button>
+            </>
+          ) : !address ? (
             <button
               type="button"
               className="btn primary"
-              disabled={!ready || !installed || connecting}
-              onClick={() => void connect()}
+              disabled={!ready || connecting || signingIn || busy}
+              onClick={() => void signInWithPhantom()}
             >
-              {!installed
-                ? "Install Phantom"
-                : connecting
-                  ? "Connecting…"
-                  : "Connect Phantom (Devnet)"}
+              {connecting || signingIn
+                ? "Connecting & signing…"
+                : "Connect Phantom (Devnet)"}
+            </button>
+          ) : !sessionReady ? (
+            <button
+              className="btn primary"
+              disabled={busy || signingIn || connecting}
+              onClick={() => void signInWithPhantom()}
+            >
+              {signingIn ? "Sign the challenge…" : "Sign in with Phantom"}
             </button>
           ) : (
             <button
@@ -445,6 +558,34 @@ function DeskInner() {
             </button>
           )}
         </div>
+        {!installed ? (
+          <p className="wallet-help" role="status">
+            Phantom is not injecting into this tab. Fix: (1) open the{" "}
+            <a
+              href="https://chromewebstore.google.com/detail/phantom/bfnaelmomeimhlpmgjnjophhpkkoljpa"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Chrome Web Store → Phantom
+            </a>{" "}
+            and click <strong>Add to Chrome</strong> / enable it; (2) turn{" "}
+            <strong>off AdGuard / uBlock on localhost</strong> (they break wallet
+            inject); (3) or run <code>npm run demo:chrome</code> for a
+            Phantom-only Chrome window; (4) hard-refresh and click{" "}
+            <strong>I installed it — recheck</strong>. Set Phantom network to{" "}
+            <strong>Devnet</strong>.
+          </p>
+        ) : address && !sessionReady ? (
+          <p className="wallet-help" role="status">
+            Wallet connected — click <strong>Sign in with Phantom</strong> and
+            approve the login message. Operator password login alone does not
+            unlock Run / propose / tasks.
+          </p>
+        ) : sessionReady ? (
+          <p className="wallet-help ok" role="status">
+            Wallet session active — Run research demo is unlocked.
+          </p>
+        ) : null}
         <p className="fixture-banner" role="status">
           Fixture mode is labeled — deterministic tools, not a silent live LLM.
           Catalog is a <strong>demo catalog</strong> (3 purchasable briefs + 1
@@ -452,7 +593,8 @@ function DeskInner() {
         </p>
         {address ? (
           <p className="wallet-line mono">
-            {shortKey(address, 6)} · SOL{" "}
+            {shortKey(address, 6)}
+            {sessionReady ? " · signed in" : " · needs sign-in"} · SOL{" "}
             {balances ? formatSol(balances.sol) : "…"} · USDC{" "}
             {balances ? formatUsdc(balances.usdcBaseUnits) : "…"}
             {balances && !balances.canCoverFee ? (
@@ -536,11 +678,19 @@ function DeskInner() {
               inputMode="numeric"
             />
           </label>
+          {!sessionReady ? (
+            <p className="wallet-help" role="status">
+              Wallet session required before Start task / agent steps. Use{" "}
+              <strong>Connect Phantom</strong> or{" "}
+              <strong>Sign in with Phantom</strong> above (not operator login
+              alone).
+            </p>
+          ) : null}
           <div className="cta-row">
             <button
               type="button"
               className="btn primary"
-              disabled={busy}
+              disabled={busy || !sessionReady}
               onClick={() => void startTask()}
             >
               Start task
@@ -548,7 +698,7 @@ function DeskInner() {
             <button
               type="button"
               className="btn"
-              disabled={busy || !task}
+              disabled={busy || !task || !sessionReady}
               onClick={() => void agentStep("inspect")}
             >
               Inspect catalog
@@ -556,7 +706,7 @@ function DeskInner() {
             <button
               type="button"
               className="btn"
-              disabled={busy || !task}
+              disabled={busy || !task || !sessionReady}
               onClick={() => void agentStep("request_blocked")}
             >
               Request blocked
@@ -564,7 +714,7 @@ function DeskInner() {
             <button
               type="button"
               className="btn"
-              disabled={busy || !task}
+              disabled={busy || !task || !sessionReady}
               onClick={() => void agentStep("request_approved")}
             >
               Request approved
@@ -572,7 +722,7 @@ function DeskInner() {
             <button
               type="button"
               className="btn"
-              disabled={busy || !task}
+              disabled={busy || !task || !sessionReady}
               onClick={() => void agentStep("request_approval_tier")}
             >
               Request above threshold

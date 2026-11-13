@@ -86,7 +86,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const session = issueWalletSession(body.wallet);
+    const session = issueWalletSession(body.wallet, request);
     const res = NextResponse.json({
       ok: true,
       wallet: body.wallet,
