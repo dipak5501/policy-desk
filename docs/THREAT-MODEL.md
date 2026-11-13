@@ -1,101 +1,92 @@
 # Threat model — Policy Desk
 
-**Owner:** Utkarsh Lubal (@ubiiii), cybersecurity engineer  
-**Scope:** UBC Hackathon 2026 Devnet demo — not a production custody product.  
-**Companion:** short summary historically in `THREAT_MODEL.md` (same content family).
+**Owner:** Utkarsh Lubal ([@ubiiii](https://github.com/ubiiii)), cybersecurity engineer  
+**Reviewers:** Dipak Yadav (product/engineering), Kashif Manzer (blockchain)  
+**Scope:** Solana **Devnet** hackathon prototype (UBC 2026). Not a production custody product.  
+**Audit status:** No third-party security audit has been performed on this repository.
 
----
-
-## Assets we protect (demo-relevant)
+## Assets
 
 | Asset | Why it matters |
 |---|---|
-| User Phantom keys | Never leave the wallet; phishing UX is out of scope but we never ask for seed |
-| USDC balances on Devnet | Demo funds; still treat transfers as irreversible |
-| Policy decisions | Integrity of allow/block/approve story for judges |
-| Ledger / audit trail | Demo credibility; not legally tamper-proof |
-| Operator approve capability | Can authorize spends above threshold |
+| USDC in the connected Phantom wallet | Devnet funds the human controls; desk must not trick-sign drains |
+| Daily / per-tx spend budget | Prevents agent overspend within the desk session |
+| Allowlisted payees & resources | Stops arbitrary merchant drains |
+| Ledger + audit trail | Demo integrity and post-hoc review |
+| Operator token | Gates human approve / reject |
+| Streams webhook secret | Prevents forged LIVE feed events when bounty path is enabled |
 
----
+## Trust boundaries
 
-## Trust model
+```
+[Untrusted] Browser UI, agent/scenario text, seller HTTP, webhook JSON
+      │
+      ▼
+[Server policy + ledger]  reviewSpend → immutable intent → prepare/confirm
+      │
+      ▼
+[Wallet] Phantom signs only what prepare built
+      │
+      ▼
+[Solana Devnet] SPL USDC / x402 seller self-facilitate
+```
 
-| Component | Trust level |
+| Boundary | Rule |
 |---|---|
-| Phantom | Trusted for signing; untrusted for “policy” (policy is server-side) |
-| Browser UI | Untrusted — can call APIs with arbitrary JSON |
-| Next.js API + `.data` | Trusted compute for this demo (single operator machine) |
-| Solana Devnet validators | Trusted for settlement truth |
-| Public RPC | Partially trusted — availability/integrity risks |
-| QuickNode Streams webhook caller | Untrusted unless shared secret matches |
-| Operator token holder | Fully trusted for approvals (shared secret) |
+| Model → policy | Scenario/agent text never sets caps, mint, or allowlists |
+| Browser → approvals | `x-operator-token` / Bearer must match `OPERATOR_TOKEN` (fail closed if unset) |
+| Browser → settle | Prepare re-checks policy + destination; confirm validates TransferChecked |
+| Seller → desk | x402 seller verifies amount, mint, payTo, and signed transfer shape |
+| Webhook → ledger | Streams verifies shared secret **when configured**; otherwise acknowledge-only |
+| Config → network | Cluster/RPC guards refuse mainnet configuration |
 
----
+## Enforced guarantees (this build)
 
-## Guarantees we **do** enforce
+1. **Policy before materialization** — `reviewSpend` on propose and again on prepare; blocked spends never get a transaction.
+2. **Immutable payment intent** — `payee`, `amount`, `mint`, and `resource` cannot be patched after create (`intentHash`).
+3. **Destination binding at settle** — payee must be allowlisted **or** equal the spending wallet on an allowlisted resource (pay-self demo).
+4. **Signed tx matches intent** — confirm decodes TransferChecked (mint, amount, ATAs, authority) before treating settle as valid; signature-only confirm is rejected.
+5. **Human gate above threshold** — `needs_approval` requires operator Approve before prepare/sign.
+6. **Budget reservation** — pending / approved / ready_to_sign / confirming / settled count toward the daily cap.
+7. **Replay resistance (desk-level)** — settled entries cannot be settled again; prepare binds `prepareId` + expiry.
+8. **Devnet lock** — refuse mainnet cluster/RPC configuration.
+9. **Audit log** — status transitions append to durable audit trail (best-effort `.data/audit.jsonl`).
 
-1. **Policy before signature** — `reviewSpend` runs on propose; prepare **re-runs** policy + destination checks before returning an unsigned tx.
-2. **Allowlist / mint / caps / pause** — non-allowlisted payee/resource, wrong mint, per-tx/daily caps, and pause can block.
-3. **Human threshold** — spends above `approvalThresholdBaseUnits` require Approve via operator token.
-4. **Immutable payment intent** — `label`, `resource`, `payee`, `amountBaseUnits`, `mint`, `scenario` cannot change after ledger create (tested).
-5. **Devnet-only** — cluster hard-fails if not `devnet`.
-6. **Block before sign** — blocked entries do not get a prepared transaction for broadcast.
-7. **Streams auth (when configured)** — webhook rejects wrong `QUICKNODE_STREAM_WEBHOOK_SECRET`.
+## Honest limitations
 
----
-
-## Explicit non-guarantees (do not claim)
-
-| Claim to avoid | Reality |
+| Limitation | Why |
 |---|---|
-| “Audited smart contract vault” | No on-chain escrow PDA in MVP |
-| “MPC / HSM agent keys” | Agent is scripted scenarios + optional future LLM; no custody |
-| “Production auth” | Operator token is a shared secret, not SSO / wallet-bound operator identity |
-| “Tamper-proof audit” | Local `.data/audit.jsonl` — operator machine can edit files |
-| “Production x402 facilitator” | Local demo seller verifies shape/amount; not a public facilitator network |
-| “Censorship-resistant desk” | Single Next process; RPC can fail |
+| Operator token is a shared secret | Demo auth — not SSO, WebAuthn, or wallet-signed approvals |
+| In-process / file ledger | Not multi-region HA; wiping `.data` loses history; not a bank ledger |
+| No on-chain policy program | Caps live in the Next.js process, not an Anchor vault |
+| Safety model is block-before-sign | No escrow PDA locks funds; honesty over custody theater |
+| x402 seller is a local demo facilitator | Not a hosted facilitator / compliance network |
+| Streams webhook | Secret must be set for untrusted internet exposure; optional bounty path |
+| Phantom UX | User can still sign unrelated txs outside this desk |
+| Public tunnel / deploy URL | Anyone with the URL + operator token can hit approval APIs — rotate token for public demos |
+| RPC / faucet availability | External dependency; dry-run still shows policy path if chain is down |
 
----
+## Adversarial coverage
 
-## Abuse cases & mitigations
+Primary suites: `lib/security/adversarial.test.ts`, policy review tests, TransferChecked validation tests.
 
-| Abuse | Mitigation | Residual risk |
-|---|---|---|
-| UI sends mutated payee after approve | Immutable intent + prepare destination re-check | Compromised server can still lie |
-| Spend without operator approval | Threshold → awaiting_approval; settle prepare should reject unapproved | Bug in status gate = critical — test daily |
-| Operator token leaked on public tunnel | Rotate token before public demo; prefer short-lived tunnel | Anyone with token can Approve |
-| Wrong mint drained | Policy `allowedMint` + TransferChecked mint | Must keep mint constant in env |
-| Daily cap bypass via many pending | Daily spent includes pending/approved reservation | Race under multi-instance (we are single-process) |
-| Streams spam | Shared secret | Empty secret = open webhook (dev only) |
-| Phishing / fake desk | Out of scope | Users must open known URL |
+Expected red-team cases (owners: Utkarsh design · Kashif chain fixes · Dipak UI honesty):
 
----
+- Signature-only confirm rejection  
+- Wrong-mint / over-cap / non-allowlisted propose blocks  
+- Destination allowlist enforcement  
+- TransferChecked amount/payee mismatch detection  
+- Approval without valid operator token rejected  
 
-## Fail-safe paths (demo)
+## What we will not claim in pitch
 
-| Failure | Expected UX |
-|---|---|
-| Policy block | Status blocked; message; **no** Phantom prompt |
-| Low SOL | Warning + faucet.solana.com link; settle refused |
-| Low USDC | Warning + faucet.circle.com; settle refused |
-| Simulate fails | `simulateOk: false`; do not encourage blind sign |
-| RPC 429 / down | Error copy; dry-run still shows policy path |
-| User rejects Phantom | Entry stays ready_to_sign / failed with message |
+- Production-grade custody, MPC, or hardware-enforced agent keys  
+- Formal verification or external audit  
+- Mainnet readiness  
+- That policy lives on-chain in this MVP  
 
----
+## Related
 
-## Testing owned by security
-
-- `lib/security/adversarial.test.ts` — intent mutation, destination checks, daily reservation  
-- `lib/policy/review.test.ts` — allow / block / threshold  
-- Manual: approve without token → 401; blocked scenario → no prepare tx  
-
-**Definition of done for Day 2:** new adversarial cases for missing operator token + unapproved settle attempt.
-
----
-
-## Pitch language (approved)
-
-> “We don’t fake an escrow vault. Policy and a human gate run **before** any signature is built. On Devnet, Phantom settles USDC only after that — and the explorer receipt is the proof.”
-
-Avoid: “bank-grade,” “unhackable,” “on-chain policy oracle,” “audited.”
+- [ARCHITECTURE.md](./ARCHITECTURE.md) — flow and boundaries  
+- [FEATURE-BACKLOG.md](./FEATURE-BACKLOG.md) — P1 adversarial expansion  
+- [STREAMS.md](./STREAMS.md) — webhook secret configuration  

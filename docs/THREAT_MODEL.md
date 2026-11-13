@@ -1,3 +1,3 @@
 # Threat model
 
-Canonical doc moved to **[THREAT-MODEL.md](./THREAT-MODEL.md)** (security owner: Utkarsh Lubal).
+Canonical document: **[THREAT-MODEL.md](./THREAT-MODEL.md)** (owned by Utkarsh Lubal, cybersecurity engineer).
