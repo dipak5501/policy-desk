@@ -8,7 +8,7 @@ Policy-gated Solana USDC spending for a **research agent** that buys useful data
 
 **start task → inspect catalog → blocked recover → approve (if needed) → simulate → Phantom sign → confirm (TransferChecked validated) → deliver paid content → answer + structured receipt**
 
-Agent execution ships as labeled **fixture mode** (deterministic tools). Optional **live** mode (`OPENAI_API_KEY`) runs a bounded, schema-validated tool loop with approval/payment pauses — never present fixture steps as silent live-model execution. Without the key: **LIVE UNVERIFIED**.
+Agent execution ships as labeled **fixture mode** (deterministic tools). Optional **live** mode (`OPENAI_API_KEY`) runs a bounded, schema-validated tool loop with approval/payment pauses — never present fixture steps as silent live-model execution. Without the key: **LIVE UNVERIFIED**. Optional **ElevenLabs TTS** (`ELEVENLABS_API_KEY`) narrates the research answer via Speak answer — burns characters/credits; Solana demo works without it; bounty only if voice appears in the demo video.
 
 ## Pitch
 
