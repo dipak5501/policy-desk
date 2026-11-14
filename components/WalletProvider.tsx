@@ -10,21 +10,8 @@ import {
   type ReactNode,
 } from "react";
 import bs58 from "bs58";
+import { getPhantom, type PhantomProvider } from "@/lib/solana/phantom";
 import { setCsrfToken } from "./csrfStore";
-
-type PhantomProvider = {
-  isPhantom?: boolean;
-  publicKey?: { toString(): string };
-  connect: () => Promise<{ publicKey: { toString(): string } }>;
-  disconnect: () => Promise<void>;
-  signTransaction: <T>(tx: T) => Promise<T>;
-  signMessage?: (
-    message: Uint8Array,
-    display?: string,
-  ) => Promise<{ signature: Uint8Array } | Uint8Array>;
-  on?: (event: string, handler: (...args: unknown[]) => void) => void;
-  off?: (event: string, handler: (...args: unknown[]) => void) => void;
-};
 
 type WalletContextValue = {
   ready: boolean;
@@ -43,26 +30,25 @@ type WalletContextValue = {
 
 const WalletContext = createContext<WalletContextValue | null>(null);
 
-function getPhantom(): PhantomProvider | null {
-  if (typeof window === "undefined") return null;
-  const anyWin = window as unknown as {
-    solana?: PhantomProvider & { providers?: PhantomProvider[] };
-    phantom?: { solana?: PhantomProvider };
-  };
-  // Prefer the dedicated Phantom namespace (works even when another wallet
-  // owns window.solana, or when isPhantom is missing on first inject).
-  const fromNamespace = anyWin.phantom?.solana;
-  if (fromNamespace && typeof fromNamespace.connect === "function") {
-    return fromNamespace;
-  }
-  const solana = anyWin.solana;
-  if (solana?.isPhantom && typeof solana.connect === "function") {
-    return solana;
-  }
-  const multi = solana?.providers?.find(
-    (p) => p?.isPhantom && typeof p.connect === "function",
+/** Host where wallet inject commonly fails (ephemeral CF tunnel origins). */
+export function isEphemeralTunnelHost(hostname = ""): boolean {
+  const h =
+    hostname ||
+    (typeof window !== "undefined" ? window.location.hostname : "");
+  return (
+    h.endsWith(".trycloudflare.com") ||
+    h.endsWith(".cfargotunnel.com") ||
+    h.endsWith(".loca.lt") ||
+    h.endsWith(".ngrok-free.app") ||
+    h.endsWith(".ngrok.io")
   );
-  return multi ?? null;
+}
+
+export function isLocalDemoHost(hostname = ""): boolean {
+  const h =
+    hostname ||
+    (typeof window !== "undefined" ? window.location.hostname : "");
+  return h === "127.0.0.1" || h === "localhost" || h === "[::1]";
 }
 
 export function WalletProvider({ children }: { children: ReactNode }) {
@@ -83,51 +69,52 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    refreshProvider();
+    // Same mount flow as Guarded Agent Treasury WalletProvider.
+    const phantom = getPhantom();
+    setProvider(phantom);
+    setInstalled(Boolean(phantom));
     setReady(true);
 
-    // Phantom may inject after first paint (extension race) — poll + official event.
-    const timers = [100, 250, 500, 1000, 2000, 4000, 8000].map((ms) =>
-      window.setTimeout(refreshProvider, ms),
-    );
-    const interval = window.setInterval(refreshProvider, 1500);
-    const onFocus = () => refreshProvider();
-    const onPhantomReady = () => refreshProvider();
-    window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onFocus);
-    window.addEventListener("phantom#initialized", onPhantomReady);
-    window.addEventListener("load", onPhantomReady);
-
-    // Restore CSRF from HttpOnly session after reload (never via document.cookie)
+    // Restore CSRF from HttpOnly session after reload
     void fetch("/api/wallet/session", { credentials: "include" })
       .then((r) => r.json())
-      .then((data: { authenticated?: boolean; wallet?: string; csrf?: string }) => {
-        if (data.authenticated && data.csrf) {
-          setSessionReady(true);
-          setCsrf(data.csrf);
-          setCsrfToken(data.csrf);
-          if (data.wallet) setAddress(data.wallet);
-        }
-      })
+      .then(
+        (data: {
+          authenticated?: boolean;
+          wallet?: string;
+          csrf?: string;
+        }) => {
+          if (data.authenticated && data.csrf) {
+            setSessionReady(true);
+            setCsrf(data.csrf);
+            setCsrfToken(data.csrf);
+            if (data.wallet) setAddress(data.wallet);
+          }
+        },
+      )
       .catch(() => {
         /* ignore */
       });
 
-    return () => {
-      timers.forEach(clearTimeout);
-      clearInterval(interval);
-      window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onFocus);
-      window.removeEventListener("phantom#initialized", onPhantomReady);
-      window.removeEventListener("load", onPhantomReady);
-    };
-  }, [refreshProvider]);
+    if (!phantom) {
+      // Late inject (extension unlock / site access) — light poll like before,
+      // but UI still shows Connect / Install (Treasury pattern), not Recheck.
+      const timers = [250, 500, 1000, 2000, 4000, 8000].map((ms) =>
+        window.setTimeout(() => {
+          const p = getPhantom();
+          if (!p) return;
+          setProvider(p);
+          setInstalled(true);
+          if (p.publicKey) setAddress(p.publicKey.toString());
+        }, ms),
+      );
+      return () => timers.forEach(clearTimeout);
+    }
 
-  useEffect(() => {
-    const p = provider;
-    if (!p?.on) return;
-    const onConnect = () => {
-      refreshProvider();
+    const onConnect = (...args: unknown[]) => {
+      const pk = args[0] as { toString?: () => string } | undefined;
+      if (pk?.toString) setAddress(pk.toString());
+      else if (phantom.publicKey) setAddress(phantom.publicKey.toString());
     };
     const onDisconnect = () => {
       setAddress(null);
@@ -135,18 +122,35 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       setCsrf(null);
       setCsrfToken(null);
     };
-    p.on("connect", onConnect);
-    p.on("disconnect", onDisconnect);
-    p.on("accountChanged", onConnect);
-    return () => {
-      p.off?.("connect", onConnect);
-      p.off?.("disconnect", onDisconnect);
-      p.off?.("accountChanged", onConnect);
+    const onAccountChanged = (...args: unknown[]) => {
+      const pk = args[0] as { toString?: () => string } | null;
+      setAddress(pk?.toString?.() ?? null);
+      setSessionReady(false);
+      setCsrf(null);
+      setCsrfToken(null);
     };
-  }, [provider, refreshProvider]);
+
+    phantom.on?.("connect", onConnect);
+    phantom.on?.("disconnect", onDisconnect);
+    phantom.on?.("accountChanged", onAccountChanged);
+
+    // Silent reconnect if previously trusted (Treasury Desk pattern).
+    phantom
+      .connect({ onlyIfTrusted: true })
+      .then((res) => setAddress(res.publicKey.toString()))
+      .catch(() => {
+        /* not previously trusted — user clicks Connect */
+      });
+
+    return () => {
+      phantom.off?.("connect", onConnect);
+      phantom.off?.("disconnect", onDisconnect);
+      phantom.off?.("accountChanged", onAccountChanged);
+    };
+  }, []);
 
   const ensureSession = useCallback(async () => {
-    const p = getPhantom();
+    const p = getPhantom() ?? provider;
     if (!p?.publicKey && !address) throw new Error("Connect Phantom first");
     const wallet = p?.publicKey?.toString() ?? address!;
     if (!p?.signMessage) {
@@ -184,26 +188,33 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     } finally {
       setSigningIn(false);
     }
-  }, [address]);
+  }, [address, provider]);
 
   const connect = useCallback(async () => {
-    refreshProvider();
-    const p = getPhantom();
-    if (!p) throw new Error("Phantom not installed");
+    const phantom = provider ?? getPhantom();
+    if (!phantom) {
+      // Treasury Desk: open install page instead of throwing / Recheck UX.
+      window.open(
+        "https://phantom.app/download",
+        "_blank",
+        "noopener,noreferrer",
+      );
+      return;
+    }
     setConnecting(true);
     try {
-      const res = await p.connect();
-      setProvider(p);
+      const res = await phantom.connect();
+      setProvider(phantom);
       setInstalled(true);
       setAddress(res.publicKey.toString());
       await ensureSession();
     } finally {
       setConnecting(false);
     }
-  }, [ensureSession, refreshProvider]);
+  }, [ensureSession, provider]);
 
   const disconnect = useCallback(async () => {
-    const p = getPhantom();
+    const p = provider ?? getPhantom();
     if (p) await p.disconnect();
     setAddress(null);
     setSessionReady(false);
@@ -215,7 +226,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     }).catch(() => {
       /* ignore */
     });
-  }, []);
+  }, [provider]);
 
   const value = useMemo(
     () => ({

@@ -8,7 +8,12 @@ import type {
 } from "@/lib/ledger/types";
 import type { CatalogResource } from "@/lib/catalog/resources";
 import { formatSol, formatUsdc, shortKey } from "@/lib/format";
-import { WalletProvider, useWallet } from "./WalletProvider";
+import { Atmosphere } from "./Atmosphere";
+import {
+  WalletProvider,
+  useWallet,
+  isEphemeralTunnelHost,
+} from "./WalletProvider";
 import { TrustStrip } from "./TrustStrip";
 import { TeamStrip } from "./TeamStrip";
 import { PaymentProgress } from "./PaymentProgress";
@@ -67,6 +72,42 @@ type Balances = {
   feeHintSol: number;
 };
 
+/** Short hint — Treasury Desk style (no Recheck-inject doom loop). */
+function WalletHint({
+  onTunnel,
+  installed,
+}: {
+  onTunnel: boolean;
+  installed: boolean;
+}) {
+  if (onTunnel) {
+    return (
+      <p className="wallet-help" role="status">
+        Tunnel origins are a bad wallet origin. Open{" "}
+        <a href="http://127.0.0.1:3000">
+          <strong>http://127.0.0.1:3000</strong>
+        </a>{" "}
+        in Chrome with Phantom, then Connect. Empty wallet is fine — fund later.
+      </p>
+    );
+  }
+  if (!installed) {
+    return (
+      <p className="wallet-help" role="status">
+        Install Phantom (Chrome), unlock it, set network to{" "}
+        <strong>Devnet</strong>, then click Connect. Empty wallet is fine for
+        login.
+      </p>
+    );
+  }
+  return (
+    <p className="wallet-help" role="status">
+      Set Phantom to <strong>Devnet</strong>. Connect signs a login challenge
+      (empty wallet OK — funding is separate).
+    </p>
+  );
+}
+
 function DeskInner() {
   const {
     address,
@@ -78,7 +119,6 @@ function DeskInner() {
     signingIn,
     ready,
     sessionReady,
-    refreshProvider,
   } = useWallet();
   const [policy, setPolicy] = useState<PolicyPayload | null>(null);
   const [balances, setBalances] = useState<Balances | null>(null);
@@ -98,6 +138,11 @@ function DeskInner() {
   const [error, setError] = useState<string | null>(null);
   const [operatorAuthed, setOperatorAuthed] = useState(false);
   const [operatorPassword, setOperatorPassword] = useState("");
+  const [onTunnel, setOnTunnel] = useState(false);
+
+  useEffect(() => {
+    setOnTunnel(isEphemeralTunnelHost(window.location.hostname));
+  }, []);
 
   const taskId = task?.id;
 
@@ -189,12 +234,8 @@ function DeskInner() {
     setBusy(true);
     setError(null);
     try {
-      refreshProvider();
-      if (!installed) {
-        throw new Error(
-          "Phantom not detected. Open this page in Chrome or Brave with the Phantom extension, then refresh.",
-        );
-      }
+      // Treasury Desk pattern: one Connect click — opens install if missing,
+      // otherwise phantom.connect() + login challenge.
       if (!address) {
         await connect();
       } else if (!sessionReady) {
@@ -288,6 +329,9 @@ function DeskInner() {
         if (entry) setFocus(entry);
       }
       await refresh();
+      if (action === "compose_answer" && data.task?.answer) {
+        void maybeAutoSpeak(String(data.task.answer));
+      }
       return data;
     } catch (err) {
       setError(
@@ -337,6 +381,65 @@ function DeskInner() {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function speakAnswer(text: string) {
+    const trimmed = text.trim();
+    if (!trimmed) {
+      setError("Nothing to speak yet — compose an answer first.");
+      return;
+    }
+    if (!sessionReady) {
+      setError("Sign in with Phantom before Speak answer.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/voice/speak", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          ...csrfHeaders(),
+        },
+        body: JSON.stringify({ text: trimmed.slice(0, 2500) }),
+      });
+      const contentType = res.headers.get("content-type") ?? "";
+      if (!res.ok) {
+        const data = contentType.includes("application/json")
+          ? await res.json().catch(() => ({}))
+          : {};
+        throw new Error(
+          (data as { error?: string }).error ??
+            `Speak failed (${res.status})`,
+        );
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audio.onended = () => URL.revokeObjectURL(url);
+      audio.onerror = () => URL.revokeObjectURL(url);
+      await audio.play();
+      setMessage("Playing ElevenLabs narration of the research answer.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Auto-speak only when server sets ELEVENLABS_AUTO_SPEAK=1 (default off). */
+  async function maybeAutoSpeak(text: string) {
+    try {
+      const status = await fetch("/api/voice/status", {
+        credentials: "include",
+      }).then((r) => r.json());
+      if (!status?.configured || !status?.autoSpeak) return;
+      await speakAnswer(text);
+    } catch {
+      /* optional path — ignore */
     }
   }
 
@@ -467,8 +570,11 @@ function DeskInner() {
       setFocus(settled);
       setReceipt(settled);
       setMessage("Compose answer from purchased sample content…");
-      await step("compose_answer");
+      const composed = await step("compose_answer");
       await refresh();
+      if (composed?.task?.answer) {
+        void maybeAutoSpeak(String(composed.task.answer));
+      }
     } catch (err) {
       setError(
         mapWalletSessionError(
@@ -482,62 +588,49 @@ function DeskInner() {
 
   return (
     <div className="desk-shell">
-      <div className="atmosphere" aria-hidden>
-        <div className="atm-wash" />
-        <div className="atm-grid" />
-        <div className="atm-band" />
-      </div>
+      <Atmosphere />
 
-      <header className="hero">
+      <header className="hero desk-hero">
+        <div className="brand-mark">
+          <span className="brand-glyph" aria-hidden />
+          <div>
+            <div className="brand-name">Policy Desk</div>
+            <span className="brand-sub">UBC Hackathon 2026 · Solana Devnet</span>
+          </div>
+        </div>
         <p className="eyebrow">
-          UBC Hackathon 2026 · Agentic Payments · Best use of Solana
+          Agentic Payments · Best use of Solana · Agents get a budget — not a
+          blank check
         </p>
-        <h1 className="brand">Policy Desk</h1>
+        <h1 className="brand">
+          Policy-gated <em>agent spend</em>
+        </h1>
         <p className="lede">
           A research agent buys useful data within budget — policy blocks bad
           merchants, humans approve when needed, Solana settles before content.
         </p>
-        <div className="cta-row">
-          {!installed ? (
-            <>
-              <a
-                className="btn primary"
-                href="https://phantom.app/download"
-                target="_blank"
-                rel="noreferrer"
-              >
-                Get Phantom extension
-              </a>
-              <button
-                className="btn ghost"
-                type="button"
-                disabled={!ready}
-                onClick={() => {
-                  refreshProvider();
-                  // Content scripts often need a full reload after enabling Phantom.
-                  window.setTimeout(() => {
-                    if (
-                      !(window as unknown as { phantom?: { solana?: unknown } })
-                        .phantom?.solana
-                    ) {
-                      window.location.reload();
-                    }
-                  }, 400);
-                }}
-              >
-                I installed it — recheck
-              </button>
-            </>
+        <div className="cta-row hero-cta">
+          {onTunnel ? (
+            <a className="btn primary" href="http://127.0.0.1:3000">
+              Open localhost (wallet works here)
+            </a>
+          ) : null}
+          {!ready ? (
+            <button className="btn primary" type="button" disabled>
+              Checking wallet…
+            </button>
           ) : !address ? (
             <button
               type="button"
               className="btn primary"
-              disabled={!ready || connecting || signingIn || busy}
+              disabled={connecting || signingIn || busy}
               onClick={() => void signInWithPhantom()}
             >
-              {connecting || signingIn
-                ? "Connecting & signing…"
-                : "Connect Phantom (Devnet)"}
+              {!installed
+                ? "Install Phantom"
+                : connecting || signingIn
+                  ? "Connecting & signing…"
+                  : "Connect Phantom"}
             </button>
           ) : !sessionReady ? (
             <button
@@ -558,34 +651,18 @@ function DeskInner() {
             </button>
           )}
         </div>
-        {!installed ? (
-          <p className="wallet-help" role="status">
-            Phantom is not injecting into this tab. Fix: (1) open the{" "}
-            <a
-              href="https://chromewebstore.google.com/detail/phantom/bfnaelmomeimhlpmgjnjophhpkkoljpa"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Chrome Web Store → Phantom
-            </a>{" "}
-            and click <strong>Add to Chrome</strong> / enable it; (2) turn{" "}
-            <strong>off AdGuard / uBlock on localhost</strong> (they break wallet
-            inject); (3) or run <code>npm run demo:chrome</code> for a
-            Phantom-only Chrome window; (4) hard-refresh and click{" "}
-            <strong>I installed it — recheck</strong>. Set Phantom network to{" "}
-            <strong>Devnet</strong>.
+        {sessionReady ? (
+          <p className="wallet-help ok" role="status">
+            Wallet session active — Run research demo is unlocked.
           </p>
         ) : address && !sessionReady ? (
           <p className="wallet-help" role="status">
             Wallet connected — click <strong>Sign in with Phantom</strong> and
-            approve the login message. Operator password login alone does not
-            unlock Run / propose / tasks.
+            approve the login message.
           </p>
-        ) : sessionReady ? (
-          <p className="wallet-help ok" role="status">
-            Wallet session active — Run research demo is unlocked.
-          </p>
-        ) : null}
+        ) : (
+          <WalletHint onTunnel={onTunnel} installed={installed} />
+        )}
         <p className="fixture-banner" role="status">
           Fixture mode is labeled — deterministic tools, not a silent live LLM.
           Catalog is a <strong>demo catalog</strong> (3 purchasable briefs + 1
@@ -794,6 +871,21 @@ function DeskInner() {
                   <article className="answer-card">
                     <h3>Answer (cites purchase)</h3>
                     <pre>{task.answer}</pre>
+                    <div className="cta-row" style={{ marginTop: "0.75rem" }}>
+                      <button
+                        type="button"
+                        className="btn ghost"
+                        disabled={busy || !sessionReady}
+                        onClick={() => void speakAnswer(task.answer!)}
+                      >
+                        Speak answer (ElevenLabs)
+                      </button>
+                    </div>
+                    <p className="muted small" style={{ marginTop: "0.45rem" }}>
+                      Optional audio — needs server{" "}
+                      <code className="mono">ELEVENLABS_API_KEY</code>. Core
+                      Solana demo works without it.
+                    </p>
                   </article>
                 ) : null}
               </>

@@ -25,9 +25,9 @@ fi
 
 echo
 echo "Phantom tips:"
-echo "  1) Use Chrome 120+ (not Cursor browser)."
-echo "  2) Disable AdGuard/uBlock on localhost — they break wallet inject."
-echo "  3) Or run: npm run demo:chrome   # Chrome with ONLY Phantom enabled"
+echo "  1) Use Chrome (not Cursor browser). Prefer http://127.0.0.1:3000 — not the CF tunnel."
+echo "  2) Toolbar icon ≠ inject: unlock Phantom → puzzle-piece → site access → On all sites → ⌘⇧R."
+echo "  3) Or run: npm run demo:chrome"
 echo "  4) Phantom → Settings → Developer Settings → Devnet"
 echo
 echo "Operator password = OPERATOR_TOKEN in .env.local"
