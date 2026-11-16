@@ -4,8 +4,6 @@ One-pager for judges and reviewers. Policy-gated Solana Devnet USDC for a **rese
 
 **Story in one line:** task + budget → propose → policy (block / allow / needs approval) → human approve if needed → Phantom sign → **confirm settle** → deliver content → answer + receipt.
 
-Detail: [JUDGE-REVIEW.md](./JUDGE-REVIEW.md) · [WIN-PLAN.md](./WIN-PLAN.md).
-
 ## End-to-end research-agent flow
 
 ```
@@ -158,14 +156,13 @@ Solana is the settlement truth: prepare → sign → confirm (full template vali
 4. **Double policy check** — propose and prepare both call `reviewSpend`.  
 5. **Audit honesty** — local append-only ≠ independently immutable on-chain trail.  
 6. **SQLite ledger** — durable across process restart; prefer a single writer. Do not claim in-process `withLedgerLock` alone is cross-process protection.  
-7. **Streams honesty** — webhook animates the ticker when configured; it is not settle reconcile.
+7. **Streams honesty** — QuickNode Streams reconciles observed signatures to the ledger (`matched` / `unmatched`); configure filter + destination per [STREAMS.md](./STREAMS.md).
 
 ## Related docs
 
-- [JUDGE-REVIEW.md](./JUDGE-REVIEW.md) — simulated panel decisions  
-- [WIN-PLAN.md](./WIN-PLAN.md) — demo path and non-goals  
-- [FEATURE-BACKLOG.md](./FEATURE-BACKLOG.md) — P0 rewritten to judges  
-- [TEAM-SPLIT.md](./TEAM-SPLIT.md) — 5-day execution  
 - [THREAT-MODEL.md](./THREAT-MODEL.md) — guarantees and limitations  
-- [STREAMS.md](./STREAMS.md) — optional QuickNode wiring  
+- [STREAMS.md](./STREAMS.md) — QuickNode Streams reconcile  
 - [ORGANIZER-RESOURCES.md](./ORGANIZER-RESOURCES.md) — sponsor links and status  
+- [DEMO-SCRIPT.md](./DEMO-SCRIPT.md) — filming script  
+- [DEVPOST-ANSWERS.md](./DEVPOST-ANSWERS.md) — Devpost draft answers  
+

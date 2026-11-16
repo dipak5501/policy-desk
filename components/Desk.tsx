@@ -15,7 +15,6 @@ import {
   isEphemeralTunnelHost,
 } from "./WalletProvider";
 import { TrustStrip } from "./TrustStrip";
-import { TeamStrip } from "./TeamStrip";
 import { PaymentProgress } from "./PaymentProgress";
 import { ReceiptCard } from "./ReceiptCard";
 import { EventTicker } from "./EventTicker";

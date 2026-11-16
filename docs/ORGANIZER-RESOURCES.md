@@ -83,4 +83,3 @@ Track guidance (guide § Agentic Payments): *“recommended to use x402, Circle 
 
 - Compact status table: [RESOURCES.md](./RESOURCES.md)
 - Streams setup: [STREAMS.md](./STREAMS.md)
-- Win strategy: [WIN-PLAN.md](./WIN-PLAN.md)

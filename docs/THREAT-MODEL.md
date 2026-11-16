@@ -95,5 +95,4 @@ Expected red-team cases (owners: Utkarsh design · Kashif chain fixes · Dipak U
 ## Related
 
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — flow and boundaries  
-- [FEATURE-BACKLOG.md](./FEATURE-BACKLOG.md) — P1 adversarial expansion  
 - [STREAMS.md](./STREAMS.md) — webhook secret configuration  

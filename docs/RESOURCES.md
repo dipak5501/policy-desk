@@ -2,7 +2,7 @@
 
 Full integration checklist with owners + status: **[ORGANIZER-RESOURCES.md](./ORGANIZER-RESOURCES.md)**.  
 Streams bounty setup: **[STREAMS.md](./STREAMS.md)**.  
-Win strategy: **[WIN-PLAN.md](./WIN-PLAN.md)**.
+Public docs: **[ARCHITECTURE.md](./ARCHITECTURE.md)** · **[DEMO-SCRIPT.md](./DEMO-SCRIPT.md)** · **[STREAMS.md](./STREAMS.md)**.
 
 ### Organizer sources (refresh often)
 

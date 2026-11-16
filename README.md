@@ -32,19 +32,15 @@ AI agents that can pay are useful until they are dangerous. Policy Desk gives an
 | [@ubiiii](https://github.com/ubiiii) | Utkarsh Lubal | Cybersecurity engineer — threat model, operator gate, adversarial tests |
 | [@KashifManzer](https://github.com/KashifManzer) | Kashif Manzer | Blockchain engineer — Solana USDC settle, Phantom, x402, Streams |
 
-Day-by-day ownership: [docs/TEAM-SPLIT.md](docs/TEAM-SPLIT.md).
-
 ## Documentation
 
 | Doc | Purpose |
 |---|---|
-| [docs/WIN-PLAN.md](docs/WIN-PLAN.md) | Track targets, thesis, 90s story, non-goals |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | propose→…→receipt, x402, trust boundaries |
 | [docs/THREAT-MODEL.md](docs/THREAT-MODEL.md) | Guarantees + limitations (matches code) |
 | [docs/DEMO-SCRIPT.md](docs/DEMO-SCRIPT.md) | 2–3 min filming script |
 | [docs/DEVPOST-ANSWERS.md](docs/DEVPOST-ANSWERS.md) | Short Devpost draft answers |
 | [docs/ORGANIZER-RESOURCES.md](docs/ORGANIZER-RESOURCES.md) | Sponsor/organizer checklist |
-| [docs/FEATURE-BACKLOG.md](docs/FEATURE-BACKLOG.md) | P0/P1/P2 |
 | [docs/STREAMS.md](docs/STREAMS.md) | QuickNode Streams reconcile (matched / unmatched) |
 
 ## Architecture

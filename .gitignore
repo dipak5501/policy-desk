@@ -13,3 +13,13 @@ out
 *.tsbuildinfo
 .DS_Store
 npm-debug.log*
+
+# Team-private strategy docs (keep local; do not publish)
+docs/TEAM-SPLIT.md
+docs/JUDGE-REVIEW.md
+docs/WIN-PLAN.md
+docs/FEATURE-BACKLOG.md
+docs/Policy-Desk-Win-Plan.pdf
+docs/THREAT_MODEL.md
+docs/_build/
+app/icon.svg.bak
