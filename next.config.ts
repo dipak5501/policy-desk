@@ -10,6 +10,9 @@ import type { NextConfig } from "next";
 // response — remote UI can fail to hydrate / look broken.
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // Next 16 defaults to Turbopack — keep empty so a webpack-only watch
+  // config does not crash `next dev`. Blink fix: tunnel/next logs live in /tmp.
+  turbopack: {},
   allowedDevOrigins: [
     "127.0.0.1",
     "localhost",

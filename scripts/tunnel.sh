@@ -23,9 +23,13 @@ URL_FILE="${ROOT}/.tunnel-url"
 PID_FILE="${ROOT}/.tunnel.pid"
 WATCHDOG_PID_FILE="${ROOT}/.tunnel-watchdog.pid"
 NEXT_PID_FILE="${ROOT}/.next-dev.pid"
-LOG_FILE="${ROOT}/.tunnel.log"
-WATCHDOG_LOG="${ROOT}/.tunnel-watchdog.log"
-NEXT_LOG="${ROOT}/.next-dev.log"
+# Logs MUST stay outside the Next project root — Turbopack/webpack watch
+# .tunnel.log / .next-dev.log and full-refresh the page (blinks local + remote).
+LOG_DIR="${TMPDIR:-/tmp}/policy-desk-logs"
+mkdir -p "${LOG_DIR}"
+LOG_FILE="${LOG_DIR}/tunnel.log"
+WATCHDOG_LOG="${LOG_DIR}/tunnel-watchdog.log"
+NEXT_LOG="${LOG_DIR}/next-dev.log"
 PROTO="${CLOUDFLARED_PROTOCOL:-http2}"
 # Slower pulse: transient CF edge blips should not thrash anything.
 WATCHDOG_INTERVAL="${TUNNEL_WATCHDOG_INTERVAL:-30}"

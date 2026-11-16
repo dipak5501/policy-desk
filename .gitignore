@@ -13,6 +13,7 @@ remote-link
 .tunnel-watchdog.log
 .next-dev.pid
 .next-dev.log
+*.log
 *.tsbuildinfo
 .DS_Store
 npm-debug.log*

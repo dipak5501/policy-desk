@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   LedgerEntry,
   ResearchTask,
@@ -163,6 +163,7 @@ function DeskInner() {
   const [onTunnel, setOnTunnel] = useState(false);
   const [voiceConfigured, setVoiceConfigured] = useState(false);
   const [voiceAutoSpeak, setVoiceAutoSpeak] = useState(false);
+  const pollCache = useRef<Record<string, string>>({});
 
   useEffect(() => {
     setOnTunnel(isEphemeralTunnelHost(window.location.hostname));
@@ -196,31 +197,64 @@ function DeskInner() {
             .then((r) => r.json())
             .catch(() => ({ configured: false, autoSpeak: false })),
         ]);
-      setOperatorAuthed(Boolean(op.authenticated));
+      setOperatorAuthed((prev) => {
+        const next = Boolean(op.authenticated);
+        return prev === next ? prev : next;
+      });
       // Prefer freshest CSRF from authenticated sessions (never document.cookie)
       if (typeof op.csrf === "string" && op.csrf) setCsrfToken(op.csrf);
       else if (typeof walletSession.csrf === "string" && walletSession.csrf) {
         setCsrfToken(walletSession.csrf);
       }
-      if (p) setPolicy(p);
-      setEntries(l.entries ?? []);
-      setAudit(l.audit ?? p?.audit ?? []);
-      setCatalog(c.resources ?? []);
-      setStreamEvents(streams.events ?? []);
-      setStreamStats(streams.stats ?? null);
-      setVoiceConfigured(Boolean(voiceStatus.configured));
-      setVoiceAutoSpeak(Boolean(voiceStatus.autoSpeak));
+      // Skip setState when payload unchanged — stops ticker/CSS blink on polls.
+      const apply = <T,>(key: string, setter: (v: T) => void, next: T) => {
+        const raw = JSON.stringify(next);
+        if (pollCache.current[key] === raw) return;
+        pollCache.current[key] = raw;
+        setter(next);
+      };
+      if (p) apply("policy", setPolicy, p as PolicyPayload);
+      apply("entries", setEntries, (l.entries ?? []) as LedgerEntry[]);
+      apply(
+        "audit",
+        setAudit,
+        (l.audit ?? p?.audit ?? []) as PolicyPayload["audit"],
+      );
+      apply("catalog", setCatalog, (c.resources ?? []) as CatalogResource[]);
+      apply(
+        "streams",
+        setStreamEvents,
+        (streams.events ?? []) as StreamEvent[],
+      );
+      apply(
+        "streamStats",
+        setStreamStats,
+        (streams.stats ?? null) as {
+          total: number;
+          matched: number;
+          unmatched: number;
+          noSignature: number;
+        } | null,
+      );
+      setVoiceConfigured((prev) => {
+        const next = Boolean(voiceStatus.configured);
+        return prev === next ? prev : next;
+      });
+      setVoiceAutoSpeak((prev) => {
+        const next = Boolean(voiceStatus.autoSpeak);
+        return prev === next ? prev : next;
+      });
       if (taskId) {
         const t = await fetch(`/api/tasks/${taskId}`)
           .then((r) => r.json())
           .catch(() => ({}));
-        if (t.task) setTask(t.task);
+        if (t.task) apply("task", setTask, t.task as ResearchTask);
       }
       if (address) {
         const b = await fetch(`/api/balances?address=${address}`)
           .then((r) => r.json())
           .catch(() => ({}));
-        if (b.balances) setBalances(b.balances);
+        if (b.balances) apply("balances", setBalances, b.balances as Balances);
         if (b.error) setError(b.error);
       }
     } catch (err) {
@@ -230,7 +264,8 @@ function DeskInner() {
 
   useEffect(() => {
     void refresh();
-    const t = setInterval(() => void refresh(), 8000);
+    // Slower poll — less UI churn; actions still call refresh() explicitly.
+    const t = setInterval(() => void refresh(), 20_000);
     return () => clearInterval(t);
   }, [refresh]);
 

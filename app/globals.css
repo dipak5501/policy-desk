@@ -207,12 +207,12 @@ code,
 
 @keyframes lamp-breathe {
   from {
-    opacity: 0.75;
+    opacity: 0.92;
     transform: scale(1);
   }
   to {
     opacity: 1;
-    transform: scale(1.03);
+    transform: scale(1.015);
   }
 }
 
@@ -547,7 +547,6 @@ code,
 .flow-rail .is-active .flow-n {
   background: var(--brass);
   color: var(--ink-deep);
-  animation: status-pulse 1.6s ease-in-out infinite;
 }
 
 /* ── Ticker ────────────────────────────────────────── */
