@@ -59,7 +59,6 @@ export async function POST(request: Request) {
       prompt,
       budgetBaseUnits,
       ownerWallet: wallet,
-      mode: "fixture",
     });
     return NextResponse.json({
       task,

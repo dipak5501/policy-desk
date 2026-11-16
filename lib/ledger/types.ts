@@ -110,18 +110,6 @@ export type TimelineEvent = {
   meta?: Record<string, unknown>;
 };
 
-export type LiveAgentProgress = {
-  messages: Array<{
-    role: "system" | "user" | "assistant" | "tool";
-    content: string;
-    tool?: string;
-  }>;
-  toolCallCount: number;
-  pauseReason?: "approval" | "payment";
-  pendingEntryId?: string;
-  status: "running" | "paused" | "completed" | "failed";
-};
-
 export type ResearchTask = {
   id: string;
   createdAt: string;
@@ -136,15 +124,14 @@ export type ResearchTask = {
     | "awaiting_signature"
     | "completed"
     | "failed";
-  mode: "fixture" | "live";
+  /** Fixture is the sole demo agent path. */
+  mode: "fixture";
   /** Authenticated wallet that owns this task. */
   ownerWallet?: string;
   timeline: TimelineEvent[];
   answer?: string;
   lastEntryId?: string;
   contentDigest?: string;
-  /** Persisted live-adapter conversation / pause state. */
-  liveProgress?: LiveAgentProgress;
 };
 
 export const IMMUTABLE_INTENT_FIELDS = [

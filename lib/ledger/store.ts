@@ -355,11 +355,9 @@ export function createTask(input: {
   prompt: string;
   budgetBaseUnits: string;
   ownerWallet?: string;
-  mode?: "fixture" | "live";
 }): ResearchTask {
   ensureLoaded();
   const ts = nowIso();
-  const mode = input.mode ?? "fixture";
   const task: ResearchTask = {
     id: randomUUID(),
     createdAt: ts,
@@ -369,14 +367,14 @@ export function createTask(input: {
     reservedBaseUnits: "0",
     spentBaseUnits: "0",
     status: "running",
-    mode,
+    mode: "fixture",
     ownerWallet: input.ownerWallet,
     timeline: [
       {
         id: randomUUID(),
         ts,
         kind: "task.started",
-        message: `Task started with budget ${input.budgetBaseUnits} base units (${mode} mode).`,
+        message: `Task started with budget ${input.budgetBaseUnits} base units (fixture mode).`,
       },
     ],
   };

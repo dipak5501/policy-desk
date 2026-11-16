@@ -487,43 +487,6 @@ code,
   font-size: 0.86rem;
 }
 
-.fixture-banner.mode-live {
-  border-color: rgba(74, 158, 126, 0.32);
-  background: var(--ok-soft);
-}
-
-.fixture-banner.mode-unverified {
-  border-color: rgba(200, 90, 70, 0.32);
-  background: rgba(200, 90, 70, 0.1);
-}
-
-.mode-toggle {
-  margin: 0.75rem 0 0.35rem;
-  padding: 0.55rem 0.75rem;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.85rem 1.25rem;
-  align-items: center;
-}
-
-.mode-toggle legend {
-  padding: 0 0.25rem;
-  font-size: 0.72rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.mode-option {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.9rem;
-  cursor: pointer;
-}
-
 /* ── Flow rail (task stages) ───────────────────────── */
 
 .flow-rail {
