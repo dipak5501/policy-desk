@@ -106,12 +106,16 @@ Copy values from `.env.example` into `.env.local` (operator session secrets, opt
 
 ### Public demo tunnel (Cloudflare)
 
+**Reliable Phantom demo link:** [http://127.0.0.1:3000](http://127.0.0.1:3000) — keep one Next process alive; the tunnel script never kills it.
+
 ```bash
 npm run tunnel          # or: npm run dev:public
-cat remote-link         # auto-updated HTTPS URL (also mirrored in .tunnel-url)
+cat remote-link         # sticky public URL (mirrored in .tunnel-url)
 ```
 
-Starts Next on `127.0.0.1:3000` if needed, opens a Cloudflare quick tunnel, writes the public URL to `remote-link`, and keeps a watchdog running so the file refreshes if the tunnel dies or the trycloudflare hostname changes. Use `npm run tunnel:refresh` to force a new URL; `npm run tunnel:url` / `tunnel:status` to inspect.
+Starts Next on `127.0.0.1:3000` only if it is down, opens **one** Cloudflare tunnel, writes the URL to `remote-link` once, and runs a **damped** watchdog that restarts cloudflared only when the process is dead (or after several consecutive public failures). App file changes and transient 502/530 blips do **not** rotate the hostname.
+
+Quick tunnels (`*.trycloudflare.com`) cannot stay forever-fixed — every necessary restart gets a new hostname. For a fixed public URL, set `TUNNEL_TOKEN` + `TUNNEL_HOSTNAME` (named Cloudflare tunnel) in `.env.local`. Use `npm run tunnel:refresh` only when you intentionally want a new quick-tunnel URL; `tunnel:url` / `tunnel:status` to inspect.
 
 ### Wallet / faucet
 
