@@ -5,9 +5,12 @@ out
 .env
 .env.local
 .env*.local
+remote-link
 .tunnel-url
 .tunnel.pid
+.tunnel-watchdog.pid
 .tunnel.log
+.tunnel-watchdog.log
 .next-dev.pid
 .next-dev.log
 *.tsbuildinfo
