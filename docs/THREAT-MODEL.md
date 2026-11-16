@@ -14,7 +14,7 @@
 | Allowlisted payees & resources | Stops arbitrary merchant drains |
 | Ledger + audit trail | Demo integrity and post-hoc review |
 | Operator token | Gates human approve / reject |
-| Streams webhook secret | Prevents forged LIVE feed events when bounty path is enabled |
+| Streams webhook secret | Prevents forged LIVE ticker events when webhook is configured (ticker ≠ bounty) |
 
 ## Trust boundaries
 

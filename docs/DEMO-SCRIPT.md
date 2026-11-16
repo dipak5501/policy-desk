@@ -6,8 +6,8 @@ User films. Do **not** invent a successful Phantom cold-run in docs if credentia
 
 1. Phantom → **Devnet** · funded SOL + Devnet USDC (`faucet.solana.com`, `faucet.circle.com`).
 2. `cp .env.example .env.local` · set `OPERATOR_TOKEN`, `SESSION_SECRET` (never commit).
-3. Optional live LLM: set `OPENAI_API_KEY` — without it, stay on **Fixture mode** (honest).
-4. `npm run build && npm run start` (or `npm run dev`) · open local or tunnel URL.
+3. Optional live LLM: set `OPENAI_API_KEY=` in `.env.local` (see `.env.example`) — without it, stay on **Fixture mode** or expect **LIVE UNVERIFIED**.
+4. `npm run build && npm run start` (or `npm run dev -- --hostname 127.0.0.1 --port 3000`) · open `http://127.0.0.1:3000`.
 5. Operator password is the value of `OPERATOR_TOKEN` in `.env.local`.
 
 ## On-camera cold run (~2–3 min)
@@ -26,9 +26,15 @@ User films. Do **not** invent a successful Phantom cold-run in docs if credentia
 | 2:10 | One-liner: jailbreak / client override fails (catalog-only propose). Optional: show threat-model slide. |
 | 2:25 | Close: “Policy + catalog is a reusable control plane for agent spend.” |
 
-## If live LLM is configured
+## Prove live agent (one-click path)
 
-Say “Live mode” once, show bounded tool loop pauses for approval/payment, then same settle path. If `OPENAI_API_KEY` missing: **LIVE UNVERIFIED** — film fixture only.
+1. Add `OPENAI_API_KEY=sk-…` to `.env.local` · restart Next.
+2. Open desk → Connect Phantom → Sign in → Operator login (if needed).
+3. Select **Live** → **Start task** → **Live turn**.
+4. Banner must read **LIVE** (not FIXTURE, not silent). If key missing/fail: **LIVE UNVERIFIED**.
+5. Approve / Simulate → sign → settle when the model pauses → **Live turn** again → answer cites purchase.
+
+If `OPENAI_API_KEY` missing: film **Fixture** only — never present fixture as live.
 
 ## Backup if Phantom unavailable
 

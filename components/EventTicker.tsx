@@ -7,11 +7,27 @@ function tone(status: LedgerEntry["status"]): string {
   if (status === "blocked" || status === "rejected" || status === "failed") {
     return "tick-bad";
   }
-  if (status === "pending" || status === "proposed" || status === "awaiting_approval") {
+  if (
+    status === "pending" ||
+    status === "proposed" ||
+    status === "awaiting_approval"
+  ) {
     return "tick-warn";
   }
   if (status === "settled" || status === "approved") return "tick-ok";
   return "tick-neutral";
+}
+
+function streamTone(ev: StreamEvent): string {
+  if (ev.matchStatus === "matched") return "tick-ok";
+  if (ev.matchStatus === "unmatched") return "tick-bad";
+  return "tick-neutral";
+}
+
+function streamLabel(ev: StreamEvent): string {
+  if (ev.matchStatus === "matched") return "stream·matched";
+  if (ev.matchStatus === "unmatched") return "stream·alert";
+  return "stream";
 }
 
 export function EventTicker({
@@ -31,9 +47,9 @@ export function EventTicker({
         aria-label="Ledger feed"
       >
         <span className="live-dot" aria-hidden />
-        <span className="ticker-label">LIVE</span>
+        <span className="ticker-label">LEDGER</span>
         <span className="muted small">
-          Waiting for proposals — blocked, settled, and Streams hits appear here.
+          No proposals yet — blocked, settled, and Streams matches scroll here.
         </span>
       </section>
     );
@@ -54,21 +70,21 @@ export function EventTicker({
       : recent.map((entry) => ({ entry, key: entry.id }));
 
   return (
-    <section
-      className="event-ticker"
-      aria-label="Recent ledger events"
-    >
+    <section className="event-ticker" aria-label="Recent ledger events">
       <div className="ticker-fixed">
         <span className="live-dot" aria-hidden />
-        <span className="ticker-label">LIVE</span>
+        <span className="ticker-label">LEDGER + STREAMS</span>
       </div>
       <div className="ticker-track">
         <ul
           className={`ticker-list${recent.length >= 3 ? " ticker-list-scroll" : ""}`}
         >
           {streams.map((ev) => (
-            <li key={`stream-${ev.id}`} className="ticker-item tick-ok">
-              <span className="ticker-status">stream</span>
+            <li
+              key={`stream-${ev.id}`}
+              className={`ticker-item ${streamTone(ev)}`}
+            >
+              <span className="ticker-status">{streamLabel(ev)}</span>
               <span className="ticker-sep" aria-hidden>
                 ·
               </span>

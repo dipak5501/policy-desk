@@ -65,12 +65,19 @@ export async function POST(request: Request) {
 
     if (body.action === "live_turn") {
       const result = await runLiveStep(body.taskId, wallet, body.userMessage);
-      return NextResponse.json(result);
+      return NextResponse.json({
+        ...result,
+        label: result.verified ? "LIVE" : "LIVE UNVERIFIED",
+        disclaimer: result.verified
+          ? "Live model tool loop — catalog-bound propose → policy → approve/settle → answer."
+          : "Live execution unverified — OPENAI_API_KEY missing or model call failed. Fixture mode remains available.",
+      });
     }
 
     const result = await runFixtureStep(body.taskId, body.action, wallet);
     return NextResponse.json({
       ...result,
+      label: "FIXTURE",
       disclaimer:
         "Fixture mode: steps are deterministic scripted tools, visibly labeled — not a live LLM.",
     });

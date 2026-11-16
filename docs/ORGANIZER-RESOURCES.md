@@ -41,7 +41,7 @@ Office hours (drop-in Zoom/Meet — see schedule doc for live Meet links):
 | Phantom wallet | [phantom.app/download](https://phantom.app/download) | WalletProvider / settle | Dipak + Kashif | **Wired** |
 | x402 on Solana (V2) | [Agentic payments / x402](https://solana.com/docs/payments/agentic-payments/x402) · CAIP-2 `solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1` | `/api/x402/*` demo merchant | Kashif | **Wired** (demo merchant — honest label) |
 | Circle Developer Docs | [developers.circle.com](https://developers.circle.com/) | ResourceStrip | Dipak | **Linked** |
-| QuickNode Streams | [Streams quickstart](https://www.quicknode.com/docs/streams/quickstart) · [Solana program data](https://www.quicknode.com/guides/quicknode-products/streams/how-to-stream-solana-program-data) · [Filters](https://www.quicknode.com/guides/quicknode-products/streams/how-to-use-filters-with-streams) · [Backfill](https://www.quicknode.com/docs/streams/backfilling) · [REST API](https://www.quicknode.com/docs/streams/rest-api) | `/api/streams/webhook` + ticker | Kashif · secret Utkarsh | **Wired optional** — ticker ≠ full bounty until reconcile |
+| QuickNode Streams | [Streams quickstart](https://www.quicknode.com/docs/streams/quickstart) · [Solana program data](https://www.quicknode.com/guides/quicknode-products/streams/how-to-stream-solana-program-data) · [Filters](https://www.quicknode.com/guides/quicknode-products/streams/how-to-use-filters-with-streams) · [Backfill](https://www.quicknode.com/docs/streams/backfilling) · [REST API](https://www.quicknode.com/docs/streams/rest-api) | `/api/streams/webhook` + ledger reconcile | Kashif · secret Utkarsh | **Claimable** after Stream filter+destination configured ([STREAMS.md](./STREAMS.md)) |
 | QuickNode credits (hackathon) | [Credits guide](https://quicknode.notion.site/quicknode-credits-for-college-xyz) | Claim for private RPC / Streams | Kashif | **Linked** — claim ASAP |
 | Solana explorer (Devnet) | Receipt links from confirm | UI receipts | Kashif | **Wired** |
 
@@ -51,7 +51,7 @@ Track guidance (guide § Agentic Payments): *“recommended to use x402, Circle 
 
 | Perk | How | Notes |
 |---|---|---|
-| ElevenLabs coupons | Discord [VnBvbbcdEC](https://discord.com/invite/VnBvbbcdEC) → `#│coupon-codes` → Start Redemption → event **University Blockchain Conference (UBC Hackathon)** · [video](https://youtu.be/S143_JtCtV8) | Optional TTS: `ELEVENLABS_API_KEY` → Speak answer narrates research text (burns chars/credits). Credits also usable for demo-video audio. Bounty only if voice is shown in the video. |
+| ElevenLabs coupons | Discord [VnBvbbcdEC](https://discord.com/invite/VnBvbbcdEC) → `#│coupon-codes` → Start Redemption → event **University Blockchain Conference (UBC Hackathon)** · [video](https://youtu.be/S143_JtCtV8) | Voice desk: `ELEVENLABS_API_KEY` → Speak answer + auto-narrate block/settle/answer (`eleven_multilingual_v2`). **Show audio in demo video** to claim bounty. |
 | Cursor / Grok Pro | Log into Grok first, then [referral link](https://grok.com/plans/referral/?sku=sku_iFHd43ge7daR&interval=MONTHLY&code=2MAZ-XB7W-XZR2-CG5V#subscribe) | Limited redemptions; new accounts |
 | QuickNode credits | [Notion credits guide](https://quicknode.notion.site/quicknode-credits-for-college-xyz) | Use for RPC + Streams |
 
@@ -62,7 +62,7 @@ Track guidance (guide § Agentic Payments): *“recommended to use x402, Circle 
 | Arc + Hardhat/Foundry | Wrong chain award for our Solana path |
 | Circle Agent Wallets / CCTP as core | No Solana agent-wallet path this build; CCTP is cross-chain |
 | Gemini Prediction Markets APIs | Dilutes Agentic Payments + Solana story (P2) |
-| ElevenLabs / Grok Bot as core feature | Optional TTS narration (`/api/voice/speak`) — not required for Solana cold demo; bounty only if shown in video |
+| Grok Bot as core feature | Not in product — leave bounty deselected |
 | Full Solana Agent Kit plugin matrix | Scope; x402 + policy catalog is the control plane |
 
 ## UI surface
@@ -76,7 +76,8 @@ Track guidance (guide § Agentic Payments): *“recommended to use x402, Circle 
 3. USDC ≥ ~0.60 from [faucet.circle.com](https://faucet.circle.com/) (Solana / Devnet / USDC)
 4. Trust strip mint = `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`
 5. Claim QuickNode credits if using private RPC / Streams
-6. If claiming Streams bounty: webhook secret + filter documented in README ([STREAMS.md](./STREAMS.md))
+6. Streams: create QuickNode Stream (filter + webhook destination) and fill Stream id in [STREAMS.md](./STREAMS.md) before claiming bounty
+7. ElevenLabs: ensure Speak plays in the filmed demo (unmute / auto-speak on)
 
 ## Companion docs
 

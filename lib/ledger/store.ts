@@ -467,6 +467,8 @@ export function appendStreamEvent(input: {
   signature?: string;
   summary: string;
   raw?: unknown;
+  matchStatus?: StreamEvent["matchStatus"];
+  matchedEntryId?: string;
 }): StreamEvent {
   ensureLoaded();
   const event: StreamEvent = {
@@ -476,6 +478,8 @@ export function appendStreamEvent(input: {
     signature: input.signature,
     summary: input.summary,
     raw: input.raw,
+    matchStatus: input.matchStatus,
+    matchedEntryId: input.matchedEntryId,
   };
   const s = state();
   s.streamEvents.unshift(event);
@@ -484,8 +488,30 @@ export function appendStreamEvent(input: {
   appendAudit("streams.event", {
     eventId: event.id,
     signature: event.signature,
+    matchStatus: event.matchStatus,
+    matchedEntryId: event.matchedEntryId,
   });
   return event;
+}
+
+/** Aggregate Streams reconcile counters for judge / status UI. */
+export function streamReconcileStats(): {
+  total: number;
+  matched: number;
+  unmatched: number;
+  noSignature: number;
+} {
+  ensureLoaded();
+  const events = state().streamEvents;
+  let matched = 0;
+  let unmatched = 0;
+  let noSignature = 0;
+  for (const e of events) {
+    if (e.matchStatus === "matched") matched += 1;
+    else if (e.matchStatus === "unmatched") unmatched += 1;
+    else if (e.matchStatus === "no_signature") noSignature += 1;
+  }
+  return { total: events.length, matched, unmatched, noSignature };
 }
 
 export function listStreamEvents(limit = 40): StreamEvent[] {

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { appendStreamEvent, listStreamEvents } from "@/lib/ledger/store";
+import { listStreamEvents, streamReconcileStats } from "@/lib/ledger/store";
+import { reconcileStreamPayload } from "@/lib/streams/reconcile";
 import {
   allowRate,
   clientKey,
@@ -27,22 +28,10 @@ function extractSignature(payload: unknown): string | undefined {
   return undefined;
 }
 
-function summarize(payload: unknown, signature?: string): string {
-  if (signature) return `Stream hit · ${signature.slice(0, 8)}…`;
-  if (payload && typeof payload !== "object") {
-    return "Stream event received";
-  }
-  if (payload && typeof payload === "object") {
-    const keys = Object.keys(payload as object);
-    return `Stream event · keys: ${keys.slice(0, 4).join(", ") || "empty"}`;
-  }
-  return "Stream event received";
-}
-
 /**
- * QuickNode Streams webhook (UBC $500 bounty).
+ * QuickNode Streams webhook — core chain observation for Policy Desk.
  * Verifies QUICKNODE_STREAM_WEBHOOK_SECRET when set.
- * Ticker only — not payment reconcile.
+ * Reconciles signatures against the ledger (matched / unmatched).
  * @see docs/STREAMS.md
  */
 export async function POST(request: Request) {
@@ -69,22 +58,22 @@ export async function POST(request: Request) {
   }
   const payload = parsed.body;
   const signature = extractSignature(payload);
-  const event = appendStreamEvent({
-    signature,
-    summary: summarize(payload, signature),
-    raw: payload,
-  });
+  const result = reconcileStreamPayload({ signature, raw: payload });
 
   return NextResponse.json({
     ok: true,
-    event,
-    note: "Streams event appended to Policy Desk feed (ticker only — not settle reconcile)",
+    event: result.event,
+    matchStatus: result.matchStatus,
+    matchedEntryId: result.matchedEntryId ?? null,
+    stats: streamReconcileStats(),
   });
 }
 
 export async function GET() {
   return NextResponse.json({
     events: listStreamEvents(40),
-    docs: "See docs/STREAMS.md — Solana Devnet USDC mint + treasury/payee filter",
+    stats: streamReconcileStats(),
+    reconcile: true,
+    docs: "See docs/STREAMS.md — Solana Devnet USDC mint + treasury/payee filter; Streams is a core observation source",
   });
 }

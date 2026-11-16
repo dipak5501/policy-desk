@@ -64,12 +64,12 @@ const RESOURCES = [
   {
     label: "QuickNode Streams",
     href: "https://www.quicknode.com/docs/streams/quickstart",
-    note: "Optional $500 bounty",
+    note: "Ticker only — bounty not claimed",
   },
   {
     label: "QN credits",
     href: "https://quicknode.notion.site/quicknode-credits-for-college-xyz",
-    note: "Hackathon RPC / Streams",
+    note: "Hackathon RPC / optional Streams",
   },
   {
     label: "Devpost",

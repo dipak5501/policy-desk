@@ -1,21 +1,29 @@
-# QuickNode Streams (incomplete for bounty)
+# QuickNode Streams (core observation + reconcile)
 
-**Status: incomplete for the QuickNode Streams bounty.** The webhook can animate the LIVE ticker. It does **not** yet reconcile known payments, flag unmatched outgoing transfers, or prove provider-authenticated delivery delay. A manually posted webhook payload does **not** prove QuickNode integration. Do not claim the bounty until reconcile ships.
+**Status: bounty-ready when a Stream is configured** with filter + HTTPS destination pointing at this webhook. Policy Desk uses Streams as a **core chain observation source**: every webhook hit is reconciled against the SQLite ledger.
 
-## What shipped (ticker only)
+| Match | Meaning |
+|---|---|
+| `matched` | Signature equals a known desk settle — independent chain confirmation |
+| `unmatched` | Signature not in ledger — unexpected USDC movement alert |
+| `no_signature` | Malformed / non-tx payload |
 
-1. `POST /api/streams/webhook` — verifies `QUICKNODE_STREAM_WEBHOOK_SECRET` when set; appends events to the durable feed.
-2. `GET /api/streams/webhook` — returns recent stream events for the LIVE ticker.
-3. Desk **LIVE** ticker shows `stream` hits alongside ledger rows (display only).
+## What ships
 
-## Configure
+1. `POST /api/streams/webhook` — verifies `QUICKNODE_STREAM_WEBHOOK_SECRET` when set; **reconciles** signature → ledger; returns `matchStatus` + stats.
+2. `GET /api/streams/webhook` — recent events + reconcile counters for the LIVE ticker / desk stats.
+3. Desk ticker shows `stream·matched` / `stream·alert` alongside ledger rows.
+4. Trust strip: **Streams · reconcile on**.
 
-1. Create a QuickNode account + **Solana Devnet** endpoint (also set `SOLANA_RPC_URL` to that HTTP URL).
-2. Create a Stream filtered to Token Program transfers involving:
-   - Devnet USDC mint `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`
-   - Your treasury wallet and/or demo payee
-3. Destination: HTTPS webhook → `https://<your-tunnel-or-deploy>/api/streams/webhook`
-4. Set a shared secret:
+## Configure (required for Devpost bounty)
+
+1. QuickNode account + **Solana Devnet** endpoint — also set `SOLANA_RPC_URL` to that HTTP URL.
+2. Create a **Stream**:
+   - **Network:** Solana Devnet
+   - **Dataset:** program / token transfers (Token Program)
+   - **Filter:** USDC mint `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU` and desk treasury / demo payee ATAs
+   - **Destination:** HTTPS webhook → `https://<deploy-or-tunnel>/api/streams/webhook`
+3. Shared secret in `.env.local`:
 
 ```bash
 QUICKNODE_STREAM_WEBHOOK_SECRET=replace-me
@@ -24,23 +32,31 @@ QUICKNODE_STREAM_WEBHOOK_SECRET=replace-me
 
 | Field | Value |
 |---|---|
-| Stream id | _(fill after create)_ |
+| Stream id | _(fill after create in QuickNode UI)_ |
 | Network | Solana Devnet |
-| Filter | USDC mint + treasury/payee ATAs |
-| Webhook | `/api/streams/webhook` |
+| Filter | USDC mint `4zMMC9…` + treasury/payee ATAs |
+| Destination | `POST /api/streams/webhook` |
+| Secret | `QUICKNODE_STREAM_WEBHOOK_SECRET` |
 
 ## Local test without QuickNode
 
 ```bash
-curl -X POST http://localhost:3000/api/streams/webhook \
+# After a real settle, reuse that signature — expect matchStatus=matched
+curl -X POST http://127.0.0.1:3000/api/streams/webhook \
   -H 'Content-Type: application/json' \
-  -H 'x-webhook-secret: replace-me' \
-  -d '{"signature":"DemoSig111111111111111111111111111111111111111","note":"manual"}'
-```
+  -H "x-webhook-secret: $QUICKNODE_STREAM_WEBHOOK_SECRET" \
+  -d '{"signature":"<settled-signature-from-ledger>"}'
 
-Refresh the desk — the LIVE ticker should show a `stream` item.
+# Unknown sig — expect matchStatus=unmatched (alert)
+curl -X POST http://127.0.0.1:3000/api/streams/webhook \
+  -H 'Content-Type: application/json' \
+  -H "x-webhook-secret: $QUICKNODE_STREAM_WEBHOOK_SECRET" \
+  -d '{"signature":"UnknownSig222222222222222222222222222222222222"}'
+```
 
 ## Links (organizer / sponsor)
 
 - [Streams quickstart](https://www.quicknode.com/docs/streams/quickstart)
 - [Stream Solana program data](https://www.quicknode.com/guides/quicknode-products/streams/how-to-stream-solana-program-data)
+- [Filters](https://www.quicknode.com/guides/quicknode-products/streams/how-to-use-filters-with-streams)
+- [Credits](https://quicknode.notion.site/quicknode-credits-for-college-xyz)

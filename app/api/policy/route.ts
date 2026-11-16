@@ -30,9 +30,11 @@ export async function GET() {
       escrowClaim: false,
       escrowNote:
         "Honest control: policy blocks before signature. No on-chain escrow vault in this MVP.",
-      streamsReconcile: false,
+      streamsReconcile: true,
       streamsNote:
-        "Streams webhook may animate the ticker; it does not yet reconcile payments for a bounty claim.",
+        "QuickNode Streams is a core observation source: webhook reconciles chain signatures to ledger settles (matched) and flags unmatched USDC hits.",
+      liveAgentNote:
+        "Fixture is the default cold-demo path. Live needs OPENAI_API_KEY.",
     },
   });
 }

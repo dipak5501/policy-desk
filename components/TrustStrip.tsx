@@ -8,6 +8,8 @@ type TrustProps = {
   wallet: string | null;
   allowlistCount: number;
   blockBeforeSign: boolean;
+  streamsReconcile?: boolean;
+  voiceReady?: boolean;
 };
 
 export function TrustStrip({
@@ -16,33 +18,43 @@ export function TrustStrip({
   wallet,
   allowlistCount,
   blockBeforeSign,
+  streamsReconcile = false,
+  voiceReady = false,
 }: TrustProps) {
   return (
-    <section className="trust-strip" aria-label="Trust controls">
-      <div>
+    <ul className="trust-strip" aria-label="Trust controls">
+      <li>
         <span className="trust-k">Network</span>
         <strong>{cluster}</strong>
-      </div>
-      <div>
+      </li>
+      <li>
         <span className="trust-k">USDC mint</span>
         <strong className="mono">{shortKey(mint, 6)}</strong>
-      </div>
-      <div>
+      </li>
+      <li>
         <span className="trust-k">Wallet</span>
         <strong className="mono">
           {wallet ? shortKey(wallet, 4) : "not connected"}
         </strong>
-      </div>
-      <div>
+      </li>
+      <li>
         <span className="trust-k">Allowlist</span>
         <strong>{allowlistCount} payees</strong>
-      </div>
-      <div>
+      </li>
+      <li>
         <span className="trust-k">Safety</span>
         <strong>
           {blockBeforeSign ? "block before sign" : "unchecked"}
         </strong>
-      </div>
-    </section>
+      </li>
+      <li>
+        <span className="trust-k">Streams</span>
+        <strong>{streamsReconcile ? "reconcile on" : "off"}</strong>
+      </li>
+      <li>
+        <span className="trust-k">Voice</span>
+        <strong>{voiceReady ? "ElevenLabs" : "unconfigured"}</strong>
+      </li>
+    </ul>
   );
 }

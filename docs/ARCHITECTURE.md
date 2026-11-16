@@ -1,9 +1,10 @@
-# Architecture — Policy Desk (judge-aligned)
+# Architecture — Policy Desk
 
-Policy-gated Solana Devnet USDC spending for a **research agent** that buys useful data. Settlement is **non-custodial**: Phantom holds keys; the desk decides whether a spend may be prepared, confirmed, and fulfilled.
+One-pager for judges and reviewers. Policy-gated Solana Devnet USDC for a **research agent** that buys useful data. Settlement is **non-custodial**: Phantom holds keys; the desk decides whether a spend may be prepared, confirmed, and fulfilled.
 
-> Target workflow: task + budget → preview → propose → policy → block/recover or approve → sign → **confirm settle** → deliver content → answer + receipt.  
-> Detail: [JUDGE-REVIEW.md](./JUDGE-REVIEW.md) · [WIN-PLAN.md](./WIN-PLAN.md).
+**Story in one line:** task + budget → propose → policy (block / allow / needs approval) → human approve if needed → Phantom sign → **confirm settle** → deliver content → answer + receipt.
+
+Detail: [JUDGE-REVIEW.md](./JUDGE-REVIEW.md) · [WIN-PLAN.md](./WIN-PLAN.md).
 
 ## End-to-end research-agent flow
 
@@ -77,18 +78,19 @@ CAIP-2 network: `solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1` (Devnet). Mint: Circle
 
 | Layer | Path | Responsibility |
 |---|---|---|
-| Desk UI | `app/page.tsx`, `components/*` | Task timeline, catalog preview, approval card, progress, receipts, resource strip |
+| Desk UI | `app/page.tsx`, `components/Desk.tsx` | Brand hero, flow rail, timeline, approval card, settle, receipt (no organizer strip) |
 | Propose / task | `app/api/agent/*` | Task + resource request → `reviewSpend` → ledger intent |
 | Policy | `lib/policy/*` | Caps, allowlists, mint, pause, approval threshold, regime → real rules |
-| Catalog | *(target)* server-side approved resources | Schema-validated resource IDs; merchants; previews; prices |
+| Catalog | `lib/catalog/resources`, `app/api/catalog` | Server-side demo catalog; schema-validated `resourceId`s; merchants; previews; prices |
+| Agent | `lib/agent/fixture`, `lib/agent/live`, `app/api/agent/run` | Labeled fixture tools; optional live model loop (`OPENAI_API_KEY`) with pause/continue |
 | Approvals | `app/api/approvals/[id]` | Operator-gated approve/reject bound to intent |
 | Settle | `app/api/settle/prepare`, `confirm` | Re-check policy, simulate, template validate, bind prepareId; verify + broadcast + reconcile |
 | Solana | `lib/solana/*` | Connection, balances, TransferChecked build/**full template** validate |
 | x402 / delivery | `lib/x402/*`, resource routes | Quote, seller verify, settle-before-deliver, retry fulfillment without re-charge |
 | Ledger / budget | `lib/ledger/store` + `lib/ledger/db` | Durable SQLite (`.data/ledger.sqlite`) with `BEGIN IMMEDIATE`; in-process lock for async only |
 | Audit | `lib/security/audit` | Append-only `.data/audit.jsonl` (server-controlled — not on-chain immutability) |
-| Streams | `app/api/streams/webhook` | Optional reconcile / unmatched-transfer flags (not ticker theater) |
-| Operator | `lib/security/operator` | Shared-secret gate (`OPERATOR_TOKEN`); never exposed to agent |
+| Streams | `app/api/streams/webhook` | Optional LIVE **ticker** only — not payment reconcile; do not claim Streams bounty |
+| Operator | `lib/security/session` + `/api/operator/*` | Shared-secret gate (`OPERATOR_TOKEN`); never exposed to agent |
 
 ## Trust boundaries
 
@@ -132,7 +134,7 @@ CAIP-2 network: `solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1` (Devnet). Mint: Circle
 7. **Settle before fulfill** — delivery retries do not re-charge.  
 8. **No vault this build** — block-before-sign; sponsorship optional later.
 
-## Devnet USDC
+## Devnet USDC + program IDs
 
 | Item | Value |
 |---|---|
@@ -140,17 +142,23 @@ CAIP-2 network: `solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1` (Devnet). Mint: Circle
 | RPC | `SOLANA_RPC_URL` (prefer private QuickNode; fallback public Devnet) |
 | Mint | `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU` |
 | Decimals | 6 (base units: `1_000_000` = $1) |
+| SPL Token program | `TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA` |
+| ATA program | `ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL` |
+| Instruction | `TransferChecked` (+ idempotent ATA create when needed) |
 | Wallet | Phantom · user switches network to Devnet |
 | Faucets | SOL: faucet.solana.com · USDC: faucet.circle.com |
+
+Solana is the settlement truth: prepare → sign → confirm (full template validation) → explorer receipt → then content delivery.
 
 ## Design choices (production-minded prototype)
 
 1. **Block before sign** — vault deferred; honesty over custody theater.  
 2. **One research workflow** — small catalog beats marketplace.  
-3. **Fixture mode labeled** — reliable demos without faking live models.  
+3. **Fixture mode labeled** — reliable demos without faking live models; live mode is opt-in and shows **LIVE UNVERIFIED** without `OPENAI_API_KEY`.  
 4. **Double policy check** — propose and prepare both call `reviewSpend`.  
 5. **Audit honesty** — local append-only ≠ independently immutable on-chain trail.  
-6. **SQLite ledger** — durable across process restart; prefer a single writer. Do not claim in-process `withLedgerLock` alone is cross-process protection.
+6. **SQLite ledger** — durable across process restart; prefer a single writer. Do not claim in-process `withLedgerLock` alone is cross-process protection.  
+7. **Streams honesty** — webhook animates the ticker when configured; it is not settle reconcile.
 
 ## Related docs
 

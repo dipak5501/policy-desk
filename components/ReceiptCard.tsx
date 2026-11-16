@@ -102,43 +102,47 @@ export function ReceiptCard({
       <p className="muted small">
         A content digest binds bytes; it does not prove quality or truth.
       </p>
-      {entry.explorerUrl ? (
-        <a
-          className="btn primary"
-          href={entry.explorerUrl}
-          target="_blank"
-          rel="noreferrer"
+      <div className="cta-row">
+        {entry.explorerUrl ? (
+          <a
+            className="btn primary"
+            href={entry.explorerUrl}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Open Solana Explorer
+          </a>
+        ) : (
+          <p className="muted">No explorer link yet — settle to mint one.</p>
+        )}
+        <button
+          type="button"
+          className="btn ghost"
+          onClick={() => {
+            const payload = {
+              taskId: task?.id ?? entry.taskId,
+              intentId: entry.id,
+              quoteId: entry.quoteId,
+              policyVersion: entry.policyVersion,
+              decision: entry.policyStatus,
+              approvalId: entry.approvalId,
+              signature: entry.signature,
+              network: entry.network,
+              mint: entry.mint,
+              amountBaseUnits: entry.amountBaseUnits,
+              merchant: entry.payee,
+              confirmation: entry.status,
+              contentDigest: entry.contentDigest,
+              answerDigest: task?.contentDigest,
+            };
+            void navigator.clipboard.writeText(
+              JSON.stringify(payload, null, 2),
+            );
+          }}
         >
-          Open Solana Explorer
-        </a>
-      ) : (
-        <p className="muted">No explorer link yet — settle to mint one.</p>
-      )}
-      <button
-        type="button"
-        className="btn ghost"
-        onClick={() => {
-          const payload = {
-            taskId: task?.id ?? entry.taskId,
-            intentId: entry.id,
-            quoteId: entry.quoteId,
-            policyVersion: entry.policyVersion,
-            decision: entry.policyStatus,
-            approvalId: entry.approvalId,
-            signature: entry.signature,
-            network: entry.network,
-            mint: entry.mint,
-            amountBaseUnits: entry.amountBaseUnits,
-            merchant: entry.payee,
-            confirmation: entry.status,
-            contentDigest: entry.contentDigest,
-            answerDigest: task?.contentDigest,
-          };
-          void navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
-        }}
-      >
-        Copy receipt JSON
-      </button>
+          Copy receipt JSON
+        </button>
+      </div>
     </article>
   );
 }

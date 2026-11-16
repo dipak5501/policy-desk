@@ -18,7 +18,7 @@ type Body = {
 };
 
 /**
- * Optional ElevenLabs TTS for the research answer.
+ * ElevenLabs TTS for the Policy Desk voice layer (research answer + settle briefs).
  * Server-side key only. Missing config → 503 (audio unverified).
  * Requires wallet session + CSRF — same gate as other mutating routes.
  */

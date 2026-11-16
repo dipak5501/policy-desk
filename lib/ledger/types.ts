@@ -88,7 +88,7 @@ export type BudgetSnapshot = {
   dailyCapBaseUnits: string;
 };
 
-/** QuickNode Streams webhook hits (optional — incomplete until reconcile). */
+/** QuickNode Streams webhook hits — reconciled against ledger signatures. */
 export type StreamEvent = {
   id: string;
   receivedAt: string;
@@ -96,6 +96,9 @@ export type StreamEvent = {
   signature?: string;
   summary: string;
   raw?: unknown;
+  /** matched = known settle; unmatched = unexpected chain hit; no_signature = malformed. */
+  matchStatus?: "matched" | "unmatched" | "no_signature";
+  matchedEntryId?: string;
 };
 
 export type TimelineEvent = {

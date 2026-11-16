@@ -3,6 +3,14 @@
 export const DEVNET_USDC_MINT =
   "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
 
+/** Canonical SPL Token program (TransferChecked settlement). */
+export const SPL_TOKEN_PROGRAM_ID =
+  "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+
+/** Associated Token Account program (idempotent ATA create when needed). */
+export const ASSOCIATED_TOKEN_PROGRAM_ID =
+  "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
+
 /** x402 V2 CAIP-2 id for Solana Devnet. */
 export const X402_DEVNET_NETWORK =
   "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1";
