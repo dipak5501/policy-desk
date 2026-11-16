@@ -1,8 +1,6 @@
 # Policy Desk
 
-> **Built during UBC Hackathon 2026** (official hacking began Thu Nov 12, 6:00 PM CST).  
-> Prep research / gallery notes lived in a separate private reference project — **this repository’s git history starts after kickoff.**  
-> Flip the GitHub repo to **public** before Devpost submit if it is still private.
+> **Built during UBC Hackathon 2026** (official hacking began Thu Nov 12, 6:00 PM CST).
 
 Policy-gated Solana USDC spending for a **research agent** that buys useful data within budget. Flow judges can see in ~90 seconds:
 
@@ -26,11 +24,11 @@ AI agents that can pay are useful until they are dangerous. Policy Desk gives an
 
 ## Engineering team
 
-| GitHub | Name | Role · ownership |
+| GitHub | Name | Role |
 |---|---|---|
-| [@dipak5501](https://github.com/dipak5501) | Dipak Yadav | Full-stack developer · product/engineering lead — desk UX, APIs, demo, Devpost |
-| [@ubiiii](https://github.com/ubiiii) | Utkarsh Lubal | Cybersecurity engineer — threat model, operator gate, adversarial tests |
-| [@KashifManzer](https://github.com/KashifManzer) | Kashif Manzer | Blockchain engineer — Solana USDC settle, Phantom, x402, Streams |
+| [@dipak5501](https://github.com/dipak5501) | Dipak Yadav | Full-stack developer |
+| [@ubiiii](https://github.com/ubiiii) | Utkarsh Lubal | Cybersecurity engineer |
+| [@KashifManzer](https://github.com/KashifManzer) | Kashif Manzer | Blockchain engineer |
 
 ## Documentation
 
@@ -93,9 +91,8 @@ Paid bodies are team-authored **demo catalog** briefs (`[DEMO CATALOG]`), unlock
 Requires Node.js 22.5 or later (`node:sqlite` is built in).
 
 ```bash
-export PATH="$HOME/.nvm/versions/node/v22.18.0/bin:$PATH"  # if needed
 cd policy-desk
-cp .env.example .env.local   # set OPERATOR_TOKEN + SESSION_SECRET (server-only)
+cp .env.example .env.local
 npm install
 npm test
 npm run typecheck
@@ -103,7 +100,7 @@ npm run build
 npm run start   # or: npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Copy values from `.env.example` into `.env.local` (operator session secrets, optional OpenAI / ElevenLabs / Streams). Open [http://localhost:3000](http://localhost:3000).
 
 ### Public demo tunnel (Cloudflare)
 
@@ -142,6 +139,6 @@ Attacks that **fail with clear reasons** (see tests + UI):
 
 Details: [docs/THREAT-MODEL.md](docs/THREAT-MODEL.md).
 
-## Eligibility note
+## Eligibility
 
-UBC Hackathon 2026 requires projects built during the hackathon. This app was scaffolded and committed in the allowed window. Do **not** submit older pre-kickoff prep repositories as the Devpost artifact.
+UBC Hackathon 2026 requires projects built during the hackathon. This app was scaffolded and committed in the allowed window.
