@@ -66,8 +66,8 @@
 | Safety model is block-before-sign | No escrow PDA locks funds; honesty over custody theater |
 | x402 seller is a local demo facilitator | Not a hosted facilitator / compliance network |
 | Streams webhook | Ticker only — not payment reconcile; do not claim Streams bounty yet |
-| Fixture agent | Deterministic tools labeled in UI — not a live model |
-| Live agent | Bounded tool loop with server credentials; unverified without `OPENAI_API_KEY`; no arbitrary URL fetch / operator secrets |
+| Fixture agent | Deterministic tools labeled in UI — not a live model (sole demo path) |
+| Live agent | Removed from product surface — was optional polish; not required for demo/judging |
 | SQLite ledger | Durable with `BEGIN IMMEDIATE`; prefer single writer. In-process mutex alone is not multi-worker protection |
 | Phantom UX | User can still sign unrelated txs outside this desk |
 | Public tunnel / deploy URL | Anyone with the URL + operator token can hit approval APIs — rotate token for public demos |

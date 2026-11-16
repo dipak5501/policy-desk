@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { runFixtureStep } from "@/lib/agent/fixture";
-import { runLiveStep } from "@/lib/agent/live";
 import { getTask } from "@/lib/ledger/store";
 import {
   allowRate,
@@ -22,7 +21,6 @@ type Body = {
     | "request_approval_tier"
     | "compose_answer"
     | "live_turn";
-  userMessage?: string;
 };
 
 export async function POST(request: Request) {
@@ -55,23 +53,21 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
+    if (body.action === "live_turn") {
+      return NextResponse.json(
+        {
+          error:
+            "Live agent mode was removed. Use fixture actions (inspect, request_*, compose_answer) or One-click demo.",
+        },
+        { status: 410 },
+      );
+    }
     const task = getTask(body.taskId);
     if (!task) {
       return NextResponse.json({ error: "Task not found" }, { status: 404 });
     }
     if (task.ownerWallet !== wallet) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    if (body.action === "live_turn") {
-      const result = await runLiveStep(body.taskId, wallet, body.userMessage);
-      return NextResponse.json({
-        ...result,
-        label: result.verified ? "LIVE" : "LIVE UNVERIFIED",
-        disclaimer: result.verified
-          ? "Live model tool loop — catalog-bound propose → policy → approve/settle → answer."
-          : "Live execution unverified — OPENAI_API_KEY missing or model call failed. Fixture mode remains available.",
-      });
     }
 
     const result = await runFixtureStep(body.taskId, body.action, wallet);

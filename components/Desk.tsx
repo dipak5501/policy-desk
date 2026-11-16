@@ -77,7 +77,7 @@ type PolicyPayload = {
     escrowNote: string;
     streamsReconcile?: boolean;
     streamsNote?: string;
-    liveAgentNote?: string;
+    fixtureAgentNote?: string;
   };
 };
 
@@ -161,9 +161,6 @@ function DeskInner() {
   const [operatorAuthed, setOperatorAuthed] = useState(false);
   const [operatorPassword, setOperatorPassword] = useState("");
   const [onTunnel, setOnTunnel] = useState(false);
-  const [agentMode, setAgentMode] = useState<"fixture" | "live">("fixture");
-  const [liveConfigured, setLiveConfigured] = useState(false);
-  const [liveLabel, setLiveLabel] = useState<string | null>(null);
   const [voiceConfigured, setVoiceConfigured] = useState(false);
   const [voiceAutoSpeak, setVoiceAutoSpeak] = useState(false);
 
@@ -175,7 +172,7 @@ function DeskInner() {
 
   const refresh = useCallback(async () => {
     try {
-      const [p, l, c, streams, op, walletSession, agentStatus, voiceStatus] =
+      const [p, l, c, streams, op, walletSession, voiceStatus] =
         await Promise.all([
           fetch("/api/policy")
             .then((r) => r.json())
@@ -195,9 +192,6 @@ function DeskInner() {
           fetch("/api/wallet/session", { credentials: "include" })
             .then((r) => r.json())
             .catch(() => ({ authenticated: false, csrf: null })),
-          fetch("/api/agent/status")
-            .then((r) => r.json())
-            .catch(() => ({ liveConfigured: false })),
           fetch("/api/voice/status")
             .then((r) => r.json())
             .catch(() => ({ configured: false, autoSpeak: false })),
@@ -214,7 +208,6 @@ function DeskInner() {
       setCatalog(c.resources ?? []);
       setStreamEvents(streams.events ?? []);
       setStreamStats(streams.stats ?? null);
-      setLiveConfigured(Boolean(agentStatus.liveConfigured));
       setVoiceConfigured(Boolean(voiceStatus.configured));
       setVoiceAutoSpeak(Boolean(voiceStatus.autoSpeak));
       if (taskId) {
@@ -341,24 +334,13 @@ function DeskInner() {
         body: JSON.stringify({
           prompt: promptInput,
           budgetBaseUnits: budgetInput,
-          mode: agentMode,
+          mode: "fixture",
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Could not start task");
       setTask(data.task);
-      setLiveLabel(null);
-      if (agentMode === "live") {
-        setMessage(
-          liveConfigured
-            ? "Live mode task started — click Live turn to call the model."
-            : "Live mode task started — LIVE UNVERIFIED until OPENAI_API_KEY is set on the server.",
-        );
-      } else {
-        setMessage(
-          "Fixture task started — scripted tools, labeled catalog.",
-        );
-      }
+      setMessage("Fixture task started — scripted tools, labeled catalog.");
       await refresh();
     } catch (err) {
       setError(
@@ -398,9 +380,8 @@ function DeskInner() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Agent step failed");
       setTask(data.task);
-      setLiveLabel(typeof data.label === "string" ? data.label : "FIXTURE");
       setMessage(
-        `${data.label ?? data.mode}: ${data.message}${
+        `${data.label ?? "FIXTURE"}: ${data.message}${
           data.disclaimer ? ` — ${data.disclaimer}` : ""
         }`,
       );
@@ -417,62 +398,6 @@ function DeskInner() {
       }
       return data;
     } catch (err) {
-      setError(
-        mapWalletSessionError(
-          err instanceof Error ? err.message : String(err),
-        ),
-      );
-      return null;
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  /** Bounded live model turn — never silent-falls back to fixture. */
-  async function liveTurn() {
-    if (!task) return;
-    if (!sessionReady) {
-      setError(
-        "Connect Phantom and sign the login challenge first (Sign in with Phantom).",
-      );
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/agent/run", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json", ...csrfHeaders() },
-        body: JSON.stringify({ taskId: task.id, action: "live_turn" }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Live turn failed");
-      if (data.task) setTask(data.task);
-      const label =
-        typeof data.label === "string"
-          ? data.label
-          : data.verified
-            ? "LIVE"
-            : "LIVE UNVERIFIED";
-      setLiveLabel(label);
-      setMessage(
-        `${label}: ${data.message}${data.blocker ? ` — ${data.blocker}` : ""}`,
-      );
-      if (data.entryId) {
-        const entry =
-          (await fetch("/api/ledger").then((r) => r.json())).entries?.find(
-            (e: LedgerEntry) => e.id === data.entryId,
-          ) ?? null;
-        if (entry) setFocus(entry);
-      }
-      await refresh();
-      if (data.task?.answer) {
-        void maybeAutoSpeak(String(data.task.answer));
-      }
-      return data;
-    } catch (err) {
-      setLiveLabel("LIVE UNVERIFIED");
       setError(
         mapWalletSessionError(
           err instanceof Error ? err.message : String(err),
@@ -603,9 +528,7 @@ function DeskInner() {
         `Settled on Solana Devnet. Signature ${String(settled.signature).slice(0, 12)}.`,
       );
       await refresh();
-      if (task?.mode === "live") {
-        await liveTurn();
-      } else if (task) {
+      if (task) {
         await agentStep("compose_answer");
       }
     } catch (err) {
@@ -645,8 +568,6 @@ function DeskInner() {
     setError(null);
     try {
       setMessage("Starting fixture research task…");
-      setAgentMode("fixture");
-      setLiveLabel("FIXTURE");
       const created = await fetch("/api/tasks", {
         method: "POST",
         credentials: "include",
@@ -909,48 +830,10 @@ function DeskInner() {
             Set a USDC budget, then run the agent. Content unlocks only after
             settlement.
           </p>
-          <p
-            className={`fixture-banner${agentMode === "live" ? (liveConfigured ? " mode-live" : " mode-unverified") : ""}`}
-            role="status"
-          >
-            {agentMode === "fixture" ? (
-              <>
-                <strong>Fixture</strong> · scripted tools for a cold demo ·
-                catalog is labeled sample data
-              </>
-            ) : liveConfigured ? (
-              <>
-                <strong>Live</strong> · model tool loop ready · catalog stays
-                sample data
-              </>
-            ) : (
-              <>
-                <strong>Live unverified</strong> · add{" "}
-                <code className="mono">OPENAI_API_KEY</code> and restart
-              </>
-            )}
+          <p className="fixture-banner" role="status">
+            <strong>Fixture</strong> · deterministic demo agent · catalog is
+            labeled sample data
           </p>
-          <fieldset className="mode-toggle" aria-label="Agent mode">
-            <legend>Agent mode</legend>
-            <label className="mode-option">
-              <input
-                type="radio"
-                name="agent-mode"
-                checked={agentMode === "fixture"}
-                onChange={() => setAgentMode("fixture")}
-              />
-              <span>Fixture</span>
-            </label>
-            <label className="mode-option">
-              <input
-                type="radio"
-                name="agent-mode"
-                checked={agentMode === "live"}
-                onChange={() => setAgentMode("live")}
-              />
-              <span>Live{liveConfigured ? "" : " · needs key"}</span>
-            </label>
-          </fieldset>
           <label className="field">
             <span>Prompt</span>
             <textarea
@@ -993,62 +876,38 @@ function DeskInner() {
                 One-click demo
               </button>
             ) : null}
-            {agentMode === "live" || task?.mode === "live" ? (
-              <button
-                type="button"
-                className="btn primary"
-                disabled={
-                  busy || !task || !sessionReady || task?.mode !== "live"
-                }
-                onClick={() => void liveTurn()}
-              >
-                Live turn
-              </button>
-            ) : null}
-            {agentMode === "fixture" || task?.mode === "fixture" ? (
-              <>
-                <button
-                  type="button"
-                  className="btn"
-                  disabled={
-                    busy || !task || !sessionReady || task?.mode === "live"
-                  }
-                  onClick={() => void agentStep("inspect")}
-                >
-                  Inspect catalog
-                </button>
-                <button
-                  type="button"
-                  className="btn"
-                  disabled={
-                    busy || !task || !sessionReady || task?.mode === "live"
-                  }
-                  onClick={() => void agentStep("request_blocked")}
-                >
-                  Request blocked
-                </button>
-                <button
-                  type="button"
-                  className="btn"
-                  disabled={
-                    busy || !task || !sessionReady || task?.mode === "live"
-                  }
-                  onClick={() => void agentStep("request_approved")}
-                >
-                  Request approved
-                </button>
-                <button
-                  type="button"
-                  className="btn"
-                  disabled={
-                    busy || !task || !sessionReady || task?.mode === "live"
-                  }
-                  onClick={() => void agentStep("request_approval_tier")}
-                >
-                  Request above threshold
-                </button>
-              </>
-            ) : null}
+            <button
+              type="button"
+              className="btn"
+              disabled={busy || !task || !sessionReady}
+              onClick={() => void agentStep("inspect")}
+            >
+              Inspect catalog
+            </button>
+            <button
+              type="button"
+              className="btn"
+              disabled={busy || !task || !sessionReady}
+              onClick={() => void agentStep("request_blocked")}
+            >
+              Request blocked
+            </button>
+            <button
+              type="button"
+              className="btn"
+              disabled={busy || !task || !sessionReady}
+              onClick={() => void agentStep("request_approved")}
+            >
+              Request approved
+            </button>
+            <button
+              type="button"
+              className="btn"
+              disabled={busy || !task || !sessionReady}
+              onClick={() => void agentStep("request_approval_tier")}
+            >
+              Request above threshold
+            </button>
           </div>
 
           <h3>Catalog</h3>
@@ -1102,24 +961,9 @@ function DeskInner() {
               </div>
             ) : (
               <>
-                <p
-                  className={`fixture-banner${
-                    task.mode === "live"
-                      ? liveLabel === "LIVE UNVERIFIED" ||
-                        (!liveConfigured && !liveLabel)
-                        ? " mode-unverified"
-                        : " mode-live"
-                      : ""
-                  }`}
-                >
-                  Mode:{" "}
-                  <strong>
-                    {task.mode === "live"
-                      ? (liveLabel ??
-                        (liveConfigured ? "LIVE" : "LIVE UNVERIFIED"))
-                      : "FIXTURE"}
-                  </strong>{" "}
-                  · budget {formatUsdc(task.budgetBaseUnits)} · reserved{" "}
+                <p className="fixture-banner">
+                  Mode: <strong>FIXTURE</strong> · budget{" "}
+                  {formatUsdc(task.budgetBaseUnits)} · reserved{" "}
                   {formatUsdc(task.reservedBaseUnits)} · spent{" "}
                   {formatUsdc(task.spentBaseUnits)}
                 </p>
@@ -1374,8 +1218,8 @@ function DeskInner() {
             )}
           </div>
         </div>
-        {policy?.trust.liveAgentNote ? (
-          <p className="muted small">{policy.trust.liveAgentNote}</p>
+        {policy?.trust.fixtureAgentNote ? (
+          <p className="muted small">{policy.trust.fixtureAgentNote}</p>
         ) : null}
       </section>
 

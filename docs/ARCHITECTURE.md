@@ -80,7 +80,7 @@ CAIP-2 network: `solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1` (Devnet). Mint: Circle
 | Propose / task | `app/api/agent/*` | Task + resource request → `reviewSpend` → ledger intent |
 | Policy | `lib/policy/*` | Caps, allowlists, mint, pause, approval threshold, regime → real rules |
 | Catalog | `lib/catalog/resources`, `app/api/catalog` | Server-side demo catalog; schema-validated `resourceId`s; merchants; previews; prices |
-| Agent | `lib/agent/fixture`, `lib/agent/live`, `app/api/agent/run` | Labeled fixture tools; optional live model loop (`OPENAI_API_KEY`) with pause/continue |
+| Agent | `lib/agent/fixture`, `app/api/agent/run` | Labeled fixture tools (sole demo path); live OpenAI adapter removed |
 | Approvals | `app/api/approvals/[id]` | Operator-gated approve/reject bound to intent |
 | Settle | `app/api/settle/prepare`, `confirm` | Re-check policy, simulate, template validate, bind prepareId; verify + broadcast + reconcile |
 | Solana | `lib/solana/*` | Connection, balances, TransferChecked build/**full template** validate |
@@ -152,7 +152,7 @@ Solana is the settlement truth: prepare → sign → confirm (full template vali
 
 1. **Block before sign** — vault deferred; honesty over custody theater.  
 2. **One research workflow** — small catalog beats marketplace.  
-3. **Fixture mode labeled** — reliable demos without faking live models; live mode is opt-in and shows **LIVE UNVERIFIED** without `OPENAI_API_KEY`.  
+3. **Fixture mode labeled** — reliable demos without faking live models; live LLM adapter was removed (not required for judging).  
 4. **Double policy check** — propose and prepare both call `reviewSpend`.  
 5. **Audit honesty** — local append-only ≠ independently immutable on-chain trail.  
 6. **SQLite ledger** — durable across process restart; prefer a single writer. Do not claim in-process `withLedgerLock` alone is cross-process protection.  

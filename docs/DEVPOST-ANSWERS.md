@@ -11,7 +11,7 @@ Agents that can pay are useful until they are dangerous. Blank-check wallets, cl
 ## How it works
 
 1. Wallet login (challenge-bound signature) + optional operator login (HttpOnly + CSRF from auth JSON).
-2. Task + USDC budget → **Fixture** (labeled deterministic tools) or **Live** agent (`OPENAI_API_KEY` → bounded tool loop; without key → **LIVE UNVERIFIED**).
+2. Task + USDC budget → **Fixture** demo agent (labeled deterministic tools; one-click or step buttons). Live LLM adapter was removed — not required.
 3. Policy engine: allow / block / needs_approval (caps, mint, allowlists) on catalog `resourceId` only.
 4. Human approval widget above threshold → settle/prepare (re-check + simulate) → Phantom sign → settle/confirm (TransferChecked + prepare binding) → deliver → answer + **ElevenLabs Speak** + receipt.
 5. SQLite ledger persists reservations across restarts. **QuickNode Streams** webhook reconciles observed signatures to ledger settles and flags unmatched USDC hits.
@@ -21,7 +21,7 @@ Agents that can pay are useful until they are dangerous. Blank-check wallets, cl
 - **Catalog as control plane** — client/model cannot set payee, amount, or mint; only `resourceId`.
 - **Streams as observation plane** — provider webhook → matched / unmatched reconcile (not a decorative ticker).
 - **Voice desk** — ElevenLabs narrates policy block, settle, and research answers (demo video must play audio).
-- **Honest demo labels** — fixture vs live vs LIVE UNVERIFIED; demo-catalog content is not faked as live oracles.
+- **Honest demo labels** — fixture agent path is labeled; demo-catalog content is not faked as live oracles.
 - **Settlement binding** — confirm requires matching `prepareId`, reconciles stored signatures, rejects client `toOwner`.
 
 ## Track / bounty selections (recommended)

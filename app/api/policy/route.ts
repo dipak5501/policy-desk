@@ -33,8 +33,8 @@ export async function GET() {
       streamsReconcile: true,
       streamsNote:
         "QuickNode Streams is a core observation source: webhook reconciles chain signatures to ledger settles (matched) and flags unmatched USDC hits.",
-      liveAgentNote:
-        "Fixture is the default cold-demo path. Live needs OPENAI_API_KEY.",
+      fixtureAgentNote:
+        "Fixture is the demo agent path (deterministic labeled tools). Live LLM adapter was removed — not required for judging.",
     },
   });
 }

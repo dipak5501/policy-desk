@@ -32,6 +32,15 @@ export async function POST(request: Request) {
       budgetBaseUnits?: string;
       mode?: "fixture" | "live";
     };
+    if (body.mode === "live") {
+      return NextResponse.json(
+        {
+          error:
+            "Live agent mode was removed. Create tasks in fixture mode (default).",
+        },
+        { status: 410 },
+      );
+    }
     const prompt =
       body.prompt?.trim() ||
       "Summarize Devnet weather using a paid research brief within budget.";
@@ -46,20 +55,16 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
-    const mode = body.mode === "live" ? "live" : "fixture";
     const task = createTask({
       prompt,
       budgetBaseUnits,
       ownerWallet: wallet,
-      mode,
+      mode: "fixture",
     });
     return NextResponse.json({
       task,
       mode: task.mode,
-      label:
-        task.mode === "fixture"
-          ? "Fixture mode — deterministic agent tools (not live model execution)."
-          : "Live mode — requires OPENAI_API_KEY server-side.",
+      label: "Fixture mode — deterministic agent tools (not a live LLM).",
     });
   } catch (err) {
     return NextResponse.json(

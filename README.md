@@ -6,7 +6,7 @@ Policy-gated Solana USDC spending for a **research agent** that buys useful data
 
 **start task → inspect catalog → blocked recover → approve (if needed) → simulate → Phantom sign → confirm (TransferChecked validated) → deliver paid content → answer + structured receipt**
 
-Agent execution ships as labeled **fixture mode** (deterministic tools). Optional **live** mode (`OPENAI_API_KEY`) runs a bounded, schema-validated tool loop with approval/payment pauses — Desk **Live** radio + **Live turn** never present fixture steps as silent live-model execution. Without the key: **LIVE UNVERIFIED**. Prove live: set key → restart → Live → Start task → Live turn.
+Agent execution ships as labeled **fixture mode** (deterministic tools) — the sole demo path. Use **One-click demo** or the fixture step buttons (inspect → blocked → approved / above threshold → settle → answer). A live OpenAI adapter was removed; organizers do not provide free LLM credits, and live mode is not required for judging.
 
 **ElevenLabs voice desk** (`ELEVENLABS_API_KEY`, product `eleven_multilingual_v2`) narrates policy block / settle briefs and research answers (auto-speak on when keyed; mute with `ELEVENLABS_AUTO_SPEAK=0`). **Show audio in the demo video** to claim the ElevenLabs bounty.
 
@@ -46,7 +46,7 @@ Public contributors and collaborators for this hackathon build:
 ## Architecture
 
 ```
-Task + budget → fixture/live agent tools → catalog resourceId
+Task + budget → fixture agent tools → catalog resourceId
                      ↓
               lib/policy (allow / block / needs_approval)
                      ↓
@@ -102,7 +102,7 @@ npm run build
 npm run start   # or: npm run dev
 ```
 
-Copy values from `.env.example` into `.env.local` (operator session secrets, optional OpenAI / ElevenLabs / Streams). Open [http://localhost:3000](http://localhost:3000).
+Copy values from `.env.example` into `.env.local` (operator session secrets, optional ElevenLabs / Streams). Open [http://localhost:3000](http://localhost:3000).
 
 ### Public demo tunnel (Cloudflare)
 
@@ -129,7 +129,7 @@ See [docs/DEMO-SCRIPT.md](docs/DEMO-SCRIPT.md).
 4. Task budget $1.00 → block $2.50 → approve $0.60 → simulate → sign → confirm → deliver → receipt.
 5. One-liner: “Agents get a budget — not a blank check.”
 
-**Limits:** SQLite prototype (single writer preferred); local x402 is a ledger-gated demo merchant; Streams needs a live QuickNode Stream id in STREAMS.md for judges; demo catalog content is labeled; live mode unverified without `OPENAI_API_KEY`.
+**Limits:** SQLite prototype (single writer preferred); local x402 is a ledger-gated demo merchant; Streams needs a live QuickNode Stream id in STREAMS.md for judges; demo catalog content is labeled; agent path is fixture-only.
 
 ## Threat model (JailbreakMe-style honesty)
 
