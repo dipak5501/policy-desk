@@ -24,6 +24,8 @@ AI agents that can pay are useful until they are dangerous. Policy Desk gives an
 
 ## Engineering team
 
+Public contributors and collaborators for this hackathon build:
+
 | GitHub | Name | Role |
 |---|---|---|
 | [@dipak5501](https://github.com/dipak5501) | Dipak Yadav | Full-stack developer |
